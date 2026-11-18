@@ -1,0 +1,25 @@
+{
+ "version":"1.0.0",
+ "effective_date":"2026-11-10",
+ "scope":"CRM Consulting: B2B research and review-only outreach drafts, Shymkent",
+ "ecc_commit":"d2ef2680594f9a17526a6e1a2e18b3d242c5d17b",
+ "application_runtime_changed":false,
+ "automatic_learning":false,
+ "score_weights_changed":false,
+ "rules":[
+  {"id":"POL-01","kind":"user_policy","status":"active","rule":"Ethical primary-business filter precedes commercial qualification."},
+  {"id":"POL-02","kind":"user_policy","status":"active","rule":"CRM identity and relationship history precede offers; read-only allowlist only."},
+  {"id":"POL-03","kind":"user_policy","status":"active","rule":"Need, specific-offer fit and contact permissibility are separate; an email is not buying intent."},
+  {"id":"POL-04","kind":"user_policy","status":"active","rule":"No cold drafts for C/D; no repeated performed/rejected service without a new evidenced basis and a contact decision."},
+  {"id":"POL-05","kind":"user_policy","status":"active","rule":"Internal research is not displayed to recipients; one product, concrete benefit, one CTA; no unsupported loss/problem claims."},
+  {"id":"POL-06","kind":"user_policy","status":"active","rule":"No sending, calling, CRM writing, external history transfer or automatic ECC hooks."},
+  {"id":"POL-07","kind":"user_policy","status":"active","rule":"Retain publication/event date, last actual verification, source availability and vacancy status separately."},
+  {"id":"POL-08","kind":"user_policy","status":"active","rule":"Warm introductions require an evidenced relationship and introducer permission, not inferred common interests."},
+  {"id":"HYP-01","kind":"commercial_hypothesis","status":"unvalidated","rule":"A fresh evidenced implementation event may produce more substantive dialogues than generic contact availability.","validation":"Compare prospect cohorts with fixed inclusion criteria; record actual replies and meetings, not predicted conversion."},
+  {"id":"HYP-02","kind":"commercial_hypothesis","status":"unvalidated","rule":"Permission to send one useful workflow scheme may lower first-contact friction.","validation":"Record recipient reactions and negative responses across comparable companies; one positive reply is insufficient."},
+  {"id":"HYP-03","kind":"commercial_hypothesis","status":"unvalidated","rule":"Accounting/1C and B2B marketing firms may support consent-based mutual referrals.","validation":"Record actual partner agreement, permitted introduction, meeting and purchase; no warm path assumed."}
+ ],
+ "validated_empirical_rules":[],
+ "promotion_requires":["Predefined population, outcome and comparison basis","Repeated comparable observations and counterexamples","Denominators and missing outcomes disclosed","Owner approval and new immutable version"],
+ "outcome_fields":["case_id","cohort","company_alias","source_reference","evidence_level","observed_at","contact_channel","contact_permission","delivered","substantive_reply","meeting_agreed","meeting_held","proposal_sent","purchase_confirmed","negative_reason","missing_data","rule_change_approved"]
+}
