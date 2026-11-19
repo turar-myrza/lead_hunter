@@ -1,0 +1,1 @@
+"""Procurement portals scraping package."""
