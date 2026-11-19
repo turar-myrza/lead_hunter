@@ -14,8 +14,9 @@ from procurements.mp_kz.scraper import MPKzScraper
 from website_scraping.crawler import WebsiteContactCrawler
 from telegram_scraping.reader import TelegramLeadReader
 from telegram_scraping.outreach_engine import run_telegram_outreach
+from calling.pbx_caller import call_lead
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 
 def main():
@@ -52,6 +53,15 @@ def main():
     outreach_parser.add_argument("--live", action="store_true", help="Execute real sending (default is safe DRY-RUN preview)")
     outreach_parser.add_argument("--output", default="data/telegram_outreach_queue.csv", help="Output CSV path")
 
+    # 6. AI PBX Product Caller Bridge
+    call_parser = subparsers.add_parser("call", help="Originate an outbound AI voice call for product sales via Bitrix PBX")
+    call_parser.add_argument("phone", help="Target phone number (must be in whitelist)")
+    call_parser.add_argument("--product", action="append", dest="products", required=True, help="Product name to pitch (can specify multiple)")
+    call_parser.add_argument("--details", default="", help="Detailed product specs, sizes, certifications")
+    call_parser.add_argument("--ceo", default="", help="CEO / Contact name")
+    call_parser.add_argument("--biz", default="", help="Company name")
+    call_parser.add_argument("--lang", default="ru", choices=["ru", "kz"], help="Conversation language")
+
     args = parser.parse_args()
 
     if not args.command or args.command == "mp_kz":
@@ -84,6 +94,17 @@ def main():
             live=args.live,
             prefix=args.prefix,
             output_csv=args.output,
+        )
+
+    elif args.command == "call":
+        print(f"=== Running AI PBX Product Caller Bridge (Lead Hunter v{VERSION}) ===")
+        call_lead(
+            phone=args.phone,
+            products=args.products,
+            details=args.details,
+            ceo=args.ceo,
+            biz=args.biz,
+            lang=args.lang,
         )
 
 
