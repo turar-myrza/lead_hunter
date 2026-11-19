@@ -78,6 +78,8 @@ async def review_history(batch):
 
 
 def main():
+    from app import universal_lead_hunter
+
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('plan')
@@ -107,8 +109,11 @@ def main():
     export.add_argument('input', type=Path)
     export.add_argument('--output', type=Path, required=True)
     export.add_argument('--expanded-reviewed', action='store_true', help='Use only after user review of pilot')
+    universal_lead_hunter.add_commands(commands.add_parser('universal', help='Run the product-brief workflow'))
     args = parser.parse_args()
-    if args.command == 'run':
+    if args.command == 'universal':
+        universal_lead_hunter.execute(args, parser)
+    elif args.command == 'run':
         from uuid import uuid4
         from app.services.lead_hunter_run import RunOptions, RunStore, execute
 

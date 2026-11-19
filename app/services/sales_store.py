@@ -56,8 +56,9 @@ class SalesStore:
             db.close()
 
     @contextmanager
-    def worker_lock(self):
-        file = self.path.with_suffix('.lock')
+    def worker_lock(self, run_id=None):
+        suffix = '.lock' if run_id is None else f'.{run_id}.lock'
+        file = self.path.with_suffix(suffix)
         fd = os.open(file, os.O_CREAT | os.O_NOFOLLOW | os.O_RDWR, 0o600)
         try:
             try:
@@ -104,10 +105,28 @@ class SalesStore:
             check = db.execute("SELECT value FROM setting WHERE key='stopped'").fetchone()
             if check and check[0] == '1':
                 return None
-            row = db.execute("SELECT * FROM run WHERE status IN ('queued','running') ORDER BY id LIMIT 1").fetchone()
+            row = db.execute("SELECT * FROM run WHERE status IN ('queued','running') "
+                             "AND origin IN ('automatic','public_batch','simulation') ORDER BY id LIMIT 1").fetchone()
             if row:
                 db.execute("UPDATE run SET status='running' WHERE id=?", (row['id'],))
                 return dict(row)
+
+    def get_run(self, run_id, origin):
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM run WHERE id=? AND origin=?', (run_id, origin)).fetchone()
+            return dict(row) if row else None
+
+    def claim_run(self, run_id, origin):
+        """Claim a specific run under its worker lock. Restart an interrupted run from its input."""
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM run WHERE id=? AND origin=?', (run_id, origin)).fetchone()
+            if row is None or row['status'] not in {'queued', 'running'}:
+                return None
+            if row['status'] == 'running':
+                db.execute('DELETE FROM step WHERE run_id=?', (run_id,))
+            db.execute("UPDATE run SET status='running' WHERE id=?", (run_id,))
+            return dict(row)
 
     def step(self, run_id, subject, role):
         with self.connect() as db:
@@ -122,6 +141,7 @@ class SalesStore:
             if cursor.rowcount:
                 db.execute('INSERT INTO event(run_id,kind,subject,at) VALUES(?,?,?,?)',
                            (run_id, role, subject, now().isoformat()))
+            return bool(cursor.rowcount)
 
     def finish(self, run_id, status, error=None):
         with self.connect() as db:

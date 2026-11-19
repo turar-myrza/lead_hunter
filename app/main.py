@@ -4,7 +4,10 @@ from fastapi import FastAPI
 
 from app.api.analytics import router as analytics_router
 from app.api.deals import router as deals_router
+from app.api.open_channels import router as open_channels_router
+from app.api.universal_lead_hunter import router as lead_hunter_router
 from app.core.config import get_settings
+from version import VERSION
 
 
 settings = get_settings()
@@ -14,10 +17,12 @@ app = FastAPI(
     description=(
         "Read-only Bitrix24 analytics with a concise Executive Report by default."
     ),
-    version="0.2.0",
+    version=VERSION,
 )
 app.include_router(deals_router)
 app.include_router(analytics_router)
+app.include_router(lead_hunter_router)
+app.include_router(open_channels_router)
 
 
 @app.get("/", tags=["Project"])

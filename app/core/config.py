@@ -1,6 +1,7 @@
 """Environment-based application settings."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from pydantic import Field, SecretStr, field_validator
@@ -22,6 +23,13 @@ class Settings(BaseSettings):
     app_name: str = "CRM Consulting AI Platform — CRM Analyst"
     bitrix24_webhook_url: Optional[SecretStr] = None
     bitrix24_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
+    lead_hunter_api_token: Optional[SecretStr] = None
+    lead_hunter_db: Path = Path('data/sales_team/universal.sqlite3')
+    lead_hunter_output: Path = Path('outputs/lead_hunter/universal')
+    bitrix24_open_channels_webhook_url: Optional[SecretStr] = None
+    bitrix24_open_channels_app_token: Optional[SecretStr] = None
+    bitrix24_open_channels_test_send: bool = False
+    bitrix24_open_channels_test_chat_ids: set[int] = Field(default_factory=set)
 
     @field_validator("bitrix24_webhook_url", mode="before")
     @classmethod

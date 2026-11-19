@@ -236,7 +236,7 @@ def learning_evaluation(metrics, min_sample=30):
             'simulated_outcomes_counted':False}
 
 
-def _deduplicate(prospects):
+def deduplicate_prospects(prospects):
     groups = []
     for candidate in prospects:
         keys = set(identity_keys(candidate))
@@ -318,7 +318,7 @@ async def process_run(store, run, *, output_root=OUT_DIR, crm_reader=check_sales
         else:
             found = [Prospect.model_validate(c) for c in payload['prospects']]
             provider_log = [{'source':mode, 'status':'validated', 'results':len(found)}]
-        checkpoint = {'prospects':[x.model_dump(mode='json') for x in _deduplicate(found)],'sources':provider_log}
+        checkpoint = {'prospects':[x.model_dump(mode='json') for x in deduplicate_prospects(found)],'sources':provider_log}
         store.save(run_id,'','discovery',checkpoint)
     candidates = [Prospect.model_validate(c) for c in checkpoint['prospects']]
     for p in candidates:

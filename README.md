@@ -340,3 +340,12 @@ The sales worker, queue, dashboard and eight role skills are described in
 [the sales team runbook](docs/sales_team.md). The portfolio workflow uses the
 same READ ONLY CRM client. See [voice transport verification](docs/sales_voice.md)
 for the test dialogue, Robovoice handoff and outbound enablement requirements.
+
+## Universal LeadHunter
+
+Submit a product brief through `python -m app.lead_hunter universal` or the internal
+FastAPI endpoints. Both use the same persisted workflow for organization and
+individual buyer paths. See the [universal LeadHunter runbook](docs/universal_lead_hunter.md)
+for fixture commands, source coverage, API configuration, and extension points.
+
+Product release: **1.2.2**. See [publishing policy](docs/versioning.md).
