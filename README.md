@@ -349,3 +349,11 @@ individual buyer paths. See the [universal LeadHunter runbook](docs/universal_le
 for fixture commands, source coverage, API configuration, and extension points.
 
 Product release: **1.2.2**. See [publishing policy](docs/versioning.md).
+
+## Platform scope and implementation status
+
+The product is a universal product-driven sales intelligence and execution platform.
+CRM implementation is the first validation product, not the platform boundary.
+See [target architecture](TARGET_ARCHITECTURE.md) for the full agreed scope and
+[implementation status and audit](IMPLEMENTATION_STATUS.md) for verified capabilities,
+gaps, decisions and the corrected first-stage plan.
