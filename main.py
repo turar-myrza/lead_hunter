@@ -14,7 +14,7 @@ from procurements.mp_kz.scraper import MPKzScraper
 from website_scraping.crawler import WebsiteContactCrawler
 from telegram_scraping.reader import TelegramLeadReader
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 
 def main():

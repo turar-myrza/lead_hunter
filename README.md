@@ -28,8 +28,6 @@ lead_hunter/
 │   └── reader.py               # Channel & chat web preview parser (t.me/s/{channel}) (v1.0.0)
 │
 ├── data/                       # Unified directory for generated lead datasets
-│   ├── medical_suppliers_contract_phones_2026.csv
-│   ├── medical_suppliers_contract_phones_2026_semicolon.csv
 │   ├── mp_kz_leads.csv
 │   └── mp_kz_leads_semicolon.csv
 │
@@ -48,7 +46,7 @@ python3 main.py mp_kz --limit 30 --output data/mp_kz_leads.csv
 ### 2. Goszakup (State Procurements)
 Scrapes awarded state tenders and extracts operational mobile numbers from signed contract PDFs:
 ```bash
-python3 main.py goszakup --output data/medical_suppliers_contract_phones_2026.csv
+python3 main.py goszakup --output data/goszakup_leads.csv
 ```
 
 ### 3. Website Scraping

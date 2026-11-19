@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 
 from common.utils import clean_cell, normalize_phone, save_csv_dual
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 BASE_URL = "https://mp.kz"
 HEADERS = {

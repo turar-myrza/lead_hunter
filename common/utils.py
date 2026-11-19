@@ -7,7 +7,7 @@ import csv
 import os
 import re
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 
 def clean_cell(val) -> str:

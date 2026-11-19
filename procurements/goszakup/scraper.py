@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup
 
 from common.utils import clean_cell, save_csv_dual
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 BASE_URL = "https://goszakup.gov.kz"
 OLD_BASE_URL = "https://old.goszakup.gov.kz"

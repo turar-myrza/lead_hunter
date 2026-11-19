@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from bs4 import BeautifulSoup
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 BASE_URL = "https://goszakup.gov.kz"
 OLD_BASE_URL = "https://old.goszakup.gov.kz"

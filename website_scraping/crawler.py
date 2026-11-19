@@ -14,7 +14,7 @@ from urllib.parse import urljoin, urlparse
 
 from common.utils import clean_cell, normalize_phone, save_csv_dual
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

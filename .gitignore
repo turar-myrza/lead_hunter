@@ -18,3 +18,8 @@ venv/
 .vscode/
 *.swp
 *~
+
+# Test & Temporary Data Exports
+medical*.csv
+data/medical*.csv
+*.tmp
