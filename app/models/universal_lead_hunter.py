@@ -57,6 +57,8 @@ class Candidate(Record):
     path: PathKind
     evidence: list[Evidence] = Field(default_factory=list, max_length=40)
     roles: list[BuyerRole] = Field(default_factory=list, max_length=18)
+    industry: str | None = Field(default=None, max_length=1200)
+    location: str | None = Field(default=None, max_length=1200)
 
     @model_validator(mode='after')
     def validate_citations(self):
@@ -81,7 +83,9 @@ class RunRequest(Record):
     # Select an existing research profile explicitly. Its CRM heuristics only apply to this context.
     research_context: Literal['general', 'crm_sales_operations'] = 'general'
     crm_read_only: bool = False
-    limit: int = Field(default=3, ge=1, le=15)
+    limit: int = Field(default=3, ge=1, le=50)
+    discovery_queries: list[Annotated[str, StringConstraints(min_length=3, max_length=200)]] = Field(default_factory=list, max_length=4)
+    discovery_urls: list[str] = Field(default_factory=list, max_length=20)
     supplied_candidates: list[Candidate] = Field(default_factory=list, max_length=15)
 
     @model_validator(mode='after')

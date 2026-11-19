@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api.analytics import router as analytics_router
 from app.api.deals import router as deals_router
 from app.api.open_channels import router as open_channels_router
+from app.api.control_center import router as control_center_router
 from app.api.universal_lead_hunter import router as lead_hunter_router
 from app.core.config import get_settings
 from version import VERSION
@@ -23,6 +24,17 @@ app.include_router(deals_router)
 app.include_router(analytics_router)
 app.include_router(lead_hunter_router)
 app.include_router(open_channels_router)
+app.include_router(control_center_router)
+
+
+@app.middleware('http')
+async def control_security_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith('/platform'):
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+    return response
 
 
 @app.get("/", tags=["Project"])

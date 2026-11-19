@@ -348,7 +348,7 @@ FastAPI endpoints. Both use the same persisted workflow for organization and
 individual buyer paths. See the [universal LeadHunter runbook](docs/universal_lead_hunter.md)
 for fixture commands, source coverage, API configuration, and extension points.
 
-Product release: **1.2.2**. See [publishing policy](docs/versioning.md).
+Product release: **1.2.3**. See [publishing policy](docs/versioning.md).
 
 ## Platform scope and implementation status
 
@@ -357,3 +357,5 @@ CRM implementation is the first validation product, not the platform boundary.
 See [target architecture](TARGET_ARCHITECTURE.md) for the full agreed scope and
 [implementation status and audit](IMPLEMENTATION_STATUS.md) for verified capabilities,
 gaps, decisions and the corrected first-stage plan.
+
+Control center: `/platform`. See [deployment and operations](docs/control_center.md).

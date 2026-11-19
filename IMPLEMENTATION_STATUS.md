@@ -109,3 +109,28 @@ acceptance of all target capabilities. Preserve tests for other products and B2C
   integrated Voice SDR or authorization for further calls.
 - Before a feature, state its target-stage ownership, reused models/services,
   approval/data boundaries and acceptance evidence; record any proposed scope change.
+
+## Control center increment — v1.2.3 (2026-11-19)
+
+The earlier audit above describes the v1.2.2 baseline; the following supersedes
+its UI and product-intelligence gaps where explicitly noted:
+
+- Implemented `/platform` browser control center in the existing FastAPI app,
+  product CRUD/revisions, real Gemini product analysis, multiple editable audience
+  segments and explicit approval, durable worker jobs, campaign progress/results,
+  manager qualification review and local prepared handoffs. APIs reuse the shared
+  models, SalesStore and LeadHunterApplication rather than a separate lead workflow.
+- New product-driven adapter supports GDELT and approved public URLs with exact-quote
+  verification. It does not inherit fixed CRM queries. Research target can be 20
+  (shared bounded run limit now 50); no guarantee that 20 supported candidates exist.
+- Secure cookie login, CSRF controls, login rate limits, request caps at deployment,
+  audit logging and daily AI-call limits added. Private CRM data stays outside AI.
+- Contact enrichment, fully general web/social discovery, actual CRM writes,
+  production engagement, scheduled follow-up, and integrated business outcome
+  ingestion are still incomplete. B2C discovery requires permissioned inbound access.
+- CEO explicitly rejected the previous Kazakh voice quality. Voice status is
+  **not approved**, and no prospect calls may run in this milestone.
+- Audience approval is a CEO action; generated audience models are not automatically
+  approved by implementation or deployment. A real discovery campaign waits for it.
+
+See `docs/control_center.md` for actual commands, guards and current limitations.
