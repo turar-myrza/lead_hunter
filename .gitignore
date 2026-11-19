@@ -22,4 +22,6 @@ venv/
 # Test & Temporary Data Exports
 medical*.csv
 data/medical*.csv
+data/telegram_outreach*.csv
+.cache/
 *.tmp

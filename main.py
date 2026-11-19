@@ -3,7 +3,7 @@ Lead Hunter Main CLI Controller
 Unified entrypoint for multiple data sources:
 - Procurements: Goszakup (goszakup.gov.kz) & MP.kz (mp.kz)
 - Website Scraping: Custom corporate domains
-- Telegram Scraping: Public business/tender channels
+- Telegram Scraping: Public business channels & Group Member Outreach
 """
 
 import argparse
@@ -13,8 +13,9 @@ from procurements.goszakup.scraper import run_contract_lead_hunter
 from procurements.mp_kz.scraper import MPKzScraper
 from website_scraping.crawler import WebsiteContactCrawler
 from telegram_scraping.reader import TelegramLeadReader
+from telegram_scraping.outreach_engine import run_telegram_outreach
 
-VERSION = "1.2.1"
+VERSION = "1.3.0"
 
 
 def main():
@@ -37,10 +38,19 @@ def main():
     web_parser.add_argument("urls", nargs="+", help="Website URLs to crawl")
     web_parser.add_argument("--output", default="data/website_leads.csv", help="Output CSV path")
 
-    # 4. Telegram Scraping
+    # 4. Telegram Scraping (Public Channel Previews)
     tg_parser = subparsers.add_parser("telegram", help="Scrape public Telegram channels for leads")
     tg_parser.add_argument("channels", nargs="+", help="Telegram channel usernames without @")
     tg_parser.add_argument("--output", default="data/telegram_leads.csv", help="Output CSV path")
+
+    # 5. Telegram Group Outreach & Member Texting
+    outreach_parser = subparsers.add_parser("outreach", help="Extract Telegram group members and text personalized inquiries")
+    outreach_parser.add_argument("group", help="Group ID (e.g. -961056384) or @username")
+    outreach_parser.add_argument("--campaign", default="bitrix_crm", choices=["bitrix_crm", "accounting", "china_logistics"], help="Campaign inquiry type")
+    outreach_parser.add_argument("--limit", type=int, default=50, help="Max members to extract")
+    outreach_parser.add_argument("--prefix", default=None, help="Optional text prefix for message (e.g. '[Тест бота]')")
+    outreach_parser.add_argument("--live", action="store_true", help="Execute real sending (default is safe DRY-RUN preview)")
+    outreach_parser.add_argument("--output", default="data/telegram_outreach_queue.csv", help="Output CSV path")
 
     args = parser.parse_args()
 
@@ -64,6 +74,17 @@ def main():
         print(f"=== Running Telegram Reader (Lead Hunter v{VERSION}) ===")
         reader = TelegramLeadReader()
         reader.scrape_channels(args.channels, output_csv=args.output)
+
+    elif args.command == "outreach":
+        print(f"=== Running Telegram Group Member Outreach (Lead Hunter v{VERSION}) ===")
+        run_telegram_outreach(
+            group_id_or_username=args.group,
+            campaign_type=args.campaign,
+            limit=args.limit,
+            live=args.live,
+            prefix=args.prefix,
+            output_csv=args.output,
+        )
 
 
 if __name__ == "__main__":
