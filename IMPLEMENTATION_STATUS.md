@@ -204,3 +204,24 @@ clear this session; keep the control center at `/platform`.
   Document worker tests mock the inherited generator; deployment must additionally
   verify real DOCX/PDF generation. New source engines are preserved, not yet
   wired into the web discovery selector. CRM history scope remains unavailable.
+
+### Deployment verification — v1.5.8, 20 November 2026
+
+- HTTPS login and Documents UI verified at `leadhunter.crmconsulting.kz/platform`.
+  Existing product and two unapproved segments preserved. No discovery launched.
+- Real Kazakh synthetic offer job 4 completed on worker, using inherited templates
+  and LibreOffice. Authenticated downloads: PDF 64,527 bytes, DOCX 1,845,334 bytes;
+  unauthenticated PDF access returned 401. No dispatch occurred.
+- Initial synthetic job 3 failed because main's f-string syntax was incompatible
+  with VPS Python 3.11. Minimal quoting fix preserves generator behavior; failure
+  remains in history. XML autoescaping added for user-entered document text.
+- Existing knowledge snapshot hash matches the deployed PBX knowledge file. It is
+  shown read-only; live voice knowledge injection is still unverified.
+- WhatsApp Nginx configuration remains byte-identical to its rollback backup.
+  Existing dedicated LeadHunter DNS/certificate/Nginx configuration reused.
+- 19 inherited Python files compile under VPS Python 3.11. No main CLI sending,
+  calling or real discovery commands were executed during this verification.
+- Final checks: VPS full suite 451 passed (including real RU/KZ DOCX rendering);
+  local suite 449 passed, 2 skipped because local docxtpl is not installed. One
+  dependency deprecation warning in each environment. `main.py --help` works;
+  it still displays inherited CLI version 1.5.5 despite main's v1.5.6 commit label.

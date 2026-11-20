@@ -123,10 +123,11 @@ def generate_commercial_offer(
         "items": processed_items
     }
 
-    tpl.render(context)
+    tpl.render(context, autoescape=True)
 
     # Resolve output paths
-    base_name = f"KP_{client_company.replace(' ', '_').replace('«', '').replace('»', '').replace('\"', '')}_{today.strftime('%Y%m%d_%H%M%S')}"
+    safe_company = client_company.replace(' ', '_').replace('«', '').replace('»', '').replace(chr(34), '')
+    base_name = f"KP_{safe_company}_{today.strftime('%Y%m%d_%H%M%S')}"
     target_docx = output_docx_path or os.path.join(DEFAULT_OUTPUT_DIR, f"{base_name}.docx")
     target_pdf = output_pdf_path or os.path.join(DEFAULT_OUTPUT_DIR, f"{base_name}.pdf")
 
