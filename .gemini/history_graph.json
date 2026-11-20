@@ -33,5 +33,12 @@
     "result_summary": "1) Corrected dispatch sequence: commercial offer is never sent beforehand. In-call Gemini agent pitches tires and asks whether to send to current number or a dictated number. Fixed bitrix_ai_gateway (v3.3.24) and prompt_library (v3.3.23) where read_only was blocking send_commercial_offer_whatsapp execution, deployed to VPS; 2) Fixed PDF layout in templates/commercial_offer_template.docx: adjusted table column widths to exactly 180mm with 15mm page margins, removed broken XML right-indent that squeezed signature into vertical single characters, and compacted images to 30mm so all 5 tires and director signature fit cleanly across 2 pages without overflow; 3) Scraped and embedded authentic high-res studio photos directly from Viatti, Triangle, and Cordiant official distributor catalogs into assets/tires/.",
     "parent": "node-1.5.1-whatsapp-2-way-dialogue-and-marketing-template",
     "timestamp": "2026-11-20T14:34:30+05:00"
+  },
+  {
+    "id": "node-1.5.4-concise-dialogue-and-instant-call-hangup",
+    "prompt_summary": "Fix remaining mistakes: eliminate verbose offer descriptions, end call immediately upon agreement or disagreement, overwrite obsolete PDF in editor",
+    "result_summary": "1) Overwrote obsolete output/KP_ТОО_CRM_Consulting_20261120_141634.pdf with the clean 2-page fixed PDF (180mm table, horizontal director closing, authentic scraped photos) and created canonical KP_ТОО_CRM_Consulting.pdf; 2) Updated prompt_library.py (v3.3.26) and bitrix_ai_gateway.py (v3.3.26) adding end_call tool to PRODUCT_CALL_TOOLS; 3) Enforced concise 1-sentence replies, banned reciting 'send offer with prices, photos, description', and implemented instant soft-hangup (1.5s delay) upon both agreement and disagreement; 4) Deployed to VPS (185.22.64.70).",
+    "parent": "node-1.5.3-fixed-layout-real-photos-and-confirmed-dispatch",
+    "timestamp": "2026-11-20T15:32:45+05:00"
   }
 ]
