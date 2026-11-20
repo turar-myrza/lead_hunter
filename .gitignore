@@ -23,5 +23,6 @@ venv/
 medical*.csv
 data/medical*.csv
 data/telegram_outreach*.csv
+output/
 .cache/
 *.tmp
