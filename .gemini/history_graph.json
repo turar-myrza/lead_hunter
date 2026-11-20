@@ -40,5 +40,12 @@
     "result_summary": "1) Overwrote obsolete output/KP_ТОО_CRM_Consulting_20261120_141634.pdf with the clean 2-page fixed PDF (180mm table, horizontal director closing, authentic scraped photos) and created canonical KP_ТОО_CRM_Consulting.pdf; 2) Updated prompt_library.py (v3.3.26) and bitrix_ai_gateway.py (v3.3.26) adding end_call tool to PRODUCT_CALL_TOOLS; 3) Enforced concise 1-sentence replies, banned reciting 'send offer with prices, photos, description', and implemented instant soft-hangup (1.5s delay) upon both agreement and disagreement; 4) Deployed to VPS (185.22.64.70).",
     "parent": "node-1.5.3-fixed-layout-real-photos-and-confirmed-dispatch",
     "timestamp": "2026-11-20T15:32:45+05:00"
+  },
+  {
+    "id": "node-1.5.5-laboratory-centrifuges-offer-and-call",
+    "prompt_summary": "Find real laboratory centrifuges in Kazakhstan (specs, prices in KZT, scraped manufacturer photos), generate commercial offer PDF, and setup outbound call to +77056945245",
+    "result_summary": "1) Researched top laboratory centrifuges sold in Kazakhstan (DLAB DM0412, Biosan LMC-3000, DLAB D2012 Plus, Armed 80-2S, Eppendorf 5424 R) with authentic specs and market prices; 2) Scraped genuine studio photos from official distributor CDNs into assets/centrifuges/; 3) Generated 2-page PDF (output/KP_Лабораторные_центрифуги_ТОО_CRM_Consulting.pdf) and hosted at https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges.pdf; 4) Updated bitrix_ai_gateway (v3.3.27) to dynamically route and dispatch centrifuge PDF upon client confirmation.",
+    "parent": "node-1.5.4-concise-dialogue-and-instant-call-hangup",
+    "timestamp": "2026-11-20T15:40:45+05:00"
   }
 ]
