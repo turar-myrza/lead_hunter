@@ -25,7 +25,7 @@ from integrations.whatsapp_sender import (
     send_whatsapp_template_with_document
 )
 
-VERSION = "1.5.3"
+VERSION = "1.5.4"
 
 
 def run_demo_tires_offer(client_company: str = "ТОО «ТАЙЫРОВ»", client_name: str = "Даурен", send_wa_phone: str = None):
