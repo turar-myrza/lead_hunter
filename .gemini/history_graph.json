@@ -19,5 +19,12 @@
     "result_summary": "Identified docxtpl (python-docx-template) + headless LibreOffice as the optimal FOSS engine. Adapted customer's docx template (ТОО «АВРОРА-2014», Aktobe) with Jinja2 table looping ({%tr for item in items %}) and InlineImage support. Built real Kazakhstan vehicle tires dataset (Cordiant, Viatti, Triangle) with specs, prices in KZT, and photos. Implemented documents/offer_generator.py (v1.5.0) and integrations/whatsapp_sender.py (v1.5.0). Generated PDF, uploaded to Meta WhatsApp Cloud API (media id: 2362664477861843), and successfully sent to Dauren (+77017211156, message id: wamid.HBgLNzcwMTcyMTExNTYVAgARGBIwMEFFMjE5QUQ4MEY4RjlDMjMA). Dispatched AI voice call pitching vehicle tires via Bitrix PBX bridge.",
     "parent": "node-1.4.0-bitrix-pbx-product-caller-bridge",
     "timestamp": "2026-11-20T11:39:30+05:00"
+  },
+  {
+    "id": "node-1.5.1-whatsapp-2-way-dialogue-and-marketing-template",
+    "prompt_summary": "Fix offer delivery on WhatsApp by adding marketing template inquiry with placeholders, handle 2-way phone selection during voice call (current number vs dictated other number) and save it, verify product photos in PDF",
+    "result_summary": "1) Solved Meta Cloud API 24-hour service window block by introducing approved WhatsApp marketing templates (send_catalog_via_url_qaz & qaz_marketing) and designed the full commercial_offer_inquiry marketing template with DOCUMENT header for Meta approval; 2) Updated bitrix_pbx ai_gateway (v3.3.22) with send_commercial_offer_whatsapp tool and strict 2-way prompt rules (Option 1: current phone, Option 2: client dictates other number) saving target phone into offer_request JSON, deployed to production VPS (185.22.64.70); 3) Upgraded lead_hunter (v1.5.1) with send_whatsapp_template_with_document, verified crisp 400x400 product photos inside PDF table, and successfully sent accepted marketing template (wamid: C5F0B04D64B1269820) and PDF document to Dauren (+77017211156).",
+    "parent": "node-1.5.0-dynamic-commercial-offer-pdf-and-whatsapp",
+    "timestamp": "2026-11-20T11:58:45+05:00"
   }
 ]
