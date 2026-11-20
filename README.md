@@ -65,3 +65,10 @@ python3 main.py telegram kztenders tender_kz --output data/telegram_leads.csv
 All scrapers automatically generate **two** sanitized formats to prevent column shifts:
 1. `*.csv`: Comma-separated with all internal text/phone commas sanitized to ` / ` (strictly aligned columns).
 2. `*_semicolon.csv`: Semicolon-separated for direct opening in Windows / CIS Excel.
+
+## Web control center
+
+The existing authenticated product-to-opportunity control center is integrated alongside
+the CLI. See [deployment and usage](docs/control_center.md). The document UI reuses
+`documents.offer_generator`; messaging and calling modules remain unchanged and are
+not automatically executed by the web application.

@@ -84,7 +84,9 @@ def generate_commercial_offer(
     if not os.path.exists(tpl_file):
         raise FileNotFoundError(f"Commercial offer template not found at: {tpl_file}")
 
-    os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
+    # Explicit application paths keep generated files in the existing private store.
+    if not output_docx_path or not output_pdf_path:
+        os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
     today = datetime.now()
     doc_date = doc_date or today.strftime("%d.%m.%Y")
     doc_number = doc_number or f"{today.strftime('%d%m')}/{today.strftime('%y')}"
@@ -141,7 +143,7 @@ def generate_commercial_offer(
             target_docx,
             "--outdir", out_dir
         ]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=90)
         if proc.returncode != 0:
             raise RuntimeError(f"LibreOffice conversion failed: {proc.stderr}")
 

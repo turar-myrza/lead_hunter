@@ -26,3 +26,56 @@ data/telegram_outreach*.csv
 output/
 .cache/
 *.tmp
+
+# Control-center private runtime files
+.env
+.env.*
+!.env.example
+.venv/
+.aws/
+.codex/
+
+*.key
+*.pem
+credentials.json
+service_account.json
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.DS_Store
+.idea/
+.vscode/
+*.icloud
+
+# Generated research, customer contacts, and local runtime state.
+outputs/
+*.csv
+*.jsonl
+*.sqlite*
+*.db
+*.db-*
+*.log
+phone_numbers.txt
+business_club*.txt
+data/commercial_rules/pilots/
+
+# Separate video experiment; not part of CRM Analyst / Lead Hunter.
+terrace-video-test/
+
+# Local prospect reviews can include internal CRM ownership/history.
+outputs/lead_hunter/v1.1/
+outputs/lead_hunter/v1.2/
+outputs/lead_hunter/runs/
+outputs/account_outreach/
+
+# Local sales queue and reports may contain public business contacts and CRM match results.
+data/sales_team/
+outputs/sales_team/
