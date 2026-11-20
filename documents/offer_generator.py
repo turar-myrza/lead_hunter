@@ -17,12 +17,18 @@ from typing import List, Dict, Any, Optional
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 
-VERSION = "1.5.3"
+VERSION = "1.5.4"
 
 DEFAULT_TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "templates",
     "commercial_offer_template.docx"
+)
+
+DEFAULT_TEMPLATE_PATH_KZ = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "templates",
+    "commercial_offer_template_kz.docx"
 )
 
 DEFAULT_OUTPUT_DIR = os.path.join(
@@ -48,7 +54,8 @@ def generate_commercial_offer(
     template_path: Optional[str] = None,
     output_docx_path: Optional[str] = None,
     output_pdf_path: Optional[str] = None,
-    convert_to_pdf: bool = True
+    convert_to_pdf: bool = True,
+    lang: str = "ru"
 ) -> Dict[str, str]:
     """
     Generate Commercial Offer DOCX and PDF from template.
@@ -57,20 +64,23 @@ def generate_commercial_offer(
     :param items: List of dicts with keys:
                   'name' (str),
                   'description' (str),
-                  'unit' (str, default 'шт'),
+                  'unit' (str, default 'шт' or 'дана'),
                   'price' (numeric or str),
                   'image_path' (str, optional)
     :param client_name: Optional contact person name
     :param doc_number: Outgoing document number (defaults to daily sequence)
     :param doc_date: Document date (defaults to current date DD.MM.YYYY)
     :param intro_text: Optional custom intro paragraph
-    :param template_path: Path to .docx template (defaults to templates/commercial_offer_template.docx)
+    :param template_path: Path to .docx template (defaults to templates/commercial_offer_template.docx or _kz.docx)
     :param output_docx_path: Target path for docx output
     :param output_pdf_path: Target path for pdf output
     :param convert_to_pdf: Whether to convert generated docx to pdf using LibreOffice
+    :param lang: Language code ('ru' or 'kz'/'kk')
     :return: Dict containing 'docx' and 'pdf' file paths
     """
-    tpl_file = template_path or DEFAULT_TEMPLATE_PATH
+    is_kz = lang in ["kz", "kk"]
+    default_tpl = DEFAULT_TEMPLATE_PATH_KZ if is_kz else DEFAULT_TEMPLATE_PATH
+    tpl_file = template_path or default_tpl
     if not os.path.exists(tpl_file):
         raise FileNotFoundError(f"Commercial offer template not found at: {tpl_file}")
 
@@ -85,6 +95,8 @@ def generate_commercial_offer(
 
     tpl = DocxTemplate(tpl_file)
 
+    default_unit = "дана" if is_kz else "шт"
+
     # Process items and images
     processed_items = []
     for item in items:
@@ -96,7 +108,7 @@ def generate_commercial_offer(
         processed_items.append({
             "name": item.get("name", ""),
             "description": item.get("description", ""),
-            "unit": item.get("unit", "шт"),
+            "unit": item.get("unit", default_unit),
             "price": format_price(item.get("price", "")),
             "image": img_obj if img_obj is not None else ""
         })

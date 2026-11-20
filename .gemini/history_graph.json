@@ -47,5 +47,12 @@
     "result_summary": "1) Researched top laboratory centrifuges sold in Kazakhstan (DLAB DM0412, Biosan LMC-3000, DLAB D2012 Plus, Armed 80-2S, Eppendorf 5424 R) with authentic specs and market prices; 2) Scraped genuine studio photos from official distributor CDNs into assets/centrifuges/; 3) Generated 2-page PDF (output/KP_Лабораторные_центрифуги_ТОО_CRM_Consulting.pdf) and hosted at https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges.pdf; 4) Updated bitrix_ai_gateway (v3.3.27) to dynamically route and dispatch centrifuge PDF upon client confirmation.",
     "parent": "node-1.5.4-concise-dialogue-and-instant-call-hangup",
     "timestamp": "2026-11-20T15:40:45+05:00"
+  },
+  {
+    "id": "node-1.5.6-kazakh-language-integration",
+    "prompt_summary": "Add Kazakh language support across AI voice calling engine and commercial offer document generation for laboratory centrifuges, with real manager sales techniques and Meta approved PDF template",
+    "result_summary": "1) Registered and received Meta approval for Kazakh translation of commercial_offer_pdf_doc (WABA 891036053865144, id: 1502195861724590) with native DOCUMENT header; 2) Updated prompt_library.py (v3.3.28) with real B2B sales manager objection handling in Kazakh (supplier, email/spam, pricing, busy) and strict 2-way phone question; 3) Upgraded bitrix_ai_gateway.py (v3.3.28) to auto-dispatch approved Kazakh/Russian commercial_offer_pdf_doc template with embedded PDF header; 4) Created templates/commercial_offer_template_kz.docx and updated offer_generator.py (v1.5.4) to generate 2-page Kazakh centrifuge PDF, hosted at https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges_kz.pdf; 5) Deployed to production telephony VPS (185.22.64.70) and verified live delivery to +77056945245.",
+    "parent": "node-1.5.5-laboratory-centrifuges-offer-and-call",
+    "timestamp": "2026-11-20T16:05:00+05:00"
   }
 ]

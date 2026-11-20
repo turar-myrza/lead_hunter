@@ -14,7 +14,7 @@ import sys
 import subprocess
 from typing import List, Optional, Dict, Any
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 PBX_DIR = "/mnt/d/projects/bitrix_pbx"
 OUTBOUND_CALLER_SCRIPT = os.path.join(PBX_DIR, "outbound_caller.py")
