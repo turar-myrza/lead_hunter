@@ -134,3 +134,47 @@ its UI and product-intelligence gaps where explicitly noted:
   approved by implementation or deployment. A real discovery campaign waits for it.
 
 See `docs/control_center.md` for actual commands, guards and current limitations.
+
+## Verified deployment — v1.2.4 (2026-11-20)
+
+- Production control center: `https://panel.whatsappcalls.kz/platform` on the
+  existing VPS. Browser verified valid HTTPS, login page, unauthenticated state
+  HTTP 401, authenticated state HTTP 200, Products, Target Audience, Discovery
+  and Prospects rendering. Secure operator credentials are not in this repository.
+- The requested apex `https://whatsappcalls.kz/platform` is NOT deployed publicly:
+  apex DNS points to 185.22.67.34, whereas this VPS is 195.49.210.252. It returns
+  404. A `/platform` reverse proxy on the apex website host is still required;
+  changing the entire apex DNS would affect that website. Panel DNS and certificate
+  already work. Existing telephony routes were preserved.
+- Python dependencies installed; web and separate worker services active and
+  enabled at boot, private backend port 8088, persistent SQLite under
+  `/var/lib/lead-hunter`. A queued analysis survived restart and the worker
+  completed it. Subsequent restart preserved authenticated session, product,
+  completed analysis and both unapproved segments; heartbeat resumed.
+- Real CRM Consulting product profile (ID 1, revision 1) saved through the API,
+  using public seller website and CEO-provided services. No CRM history was sent
+  to the model. Analysis job 2 completed via actual Gemini 3.8 Flash invocation:
+  1,416 input / 1,042 output tokens recorded. Job 1 remains visibly failed: the
+  provider returned 404 for 2.5 Flash and explicitly required migration. No
+  synthetic replacement or hidden retry was used. Monetary billing not verified.
+- Two generated audience hypotheses saved: retail/marketplace trading companies,
+  and service/wholesale B2B direct-sales companies. Roles, motivations, signals,
+  search queries and criteria are visible. BOTH remain pending CEO approval.
+  Generated queries can attract vendors and criteria partly describe vendor
+  selection, rather than prospect qualification: review/edit is required before
+  discovery. Seller references do not verify buyer demand.
+- Live unapproved campaign request returned 409 `audience_approval_required`;
+  invalid handoff returned 409 `qualified_review_required`. Zero discovery jobs
+  were launched, no prospects contacted, no production CRM records written.
+- CRM connection read-only scope check succeeded, but configured credential lacks
+  `crm` scope. `imopenlines` is available. Customer/history checks require a
+  dedicated authorized read-only-use credential with CRM permission. Connector
+  status remains unknown where Bitrix24 requires application context.
+- Discovery, persistence, qualification and prepared handoff use the shared real
+  backend; fixture tests verify these paths. Live discovery/qualification is NOT
+  claimed verified because CEO approval is pending. No prospect records seeded.
+- API capabilities report CRM writes, external messages and external calls false;
+  panel has no production send/call executor. Voice quality remains not approved.
+- Validation: local and VPS full pytest suites each 446 passed, one dependency
+  deprecation warning; `node --check app/web/control.js` and `git diff --check`
+  passed. Python 3.11 TLS mock compatibility fixed without changing runtime TLS.

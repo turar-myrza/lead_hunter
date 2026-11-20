@@ -31,7 +31,7 @@ logs, audio, generated reports, or unreviewed production files.
 
 ## Current publishing policy
 
-Current release: `1.2.3` (universal web control center).
+Current release: `1.2.4` (verified control-center deployment and provider compatibility).
 After each completed, validated code change, increment the patch version, commit
 with a short description and version, create a matching annotated tag, and push
 to `codex/lead-hunter-initial` in `turar-myrza/lead_hunter`. This is the user-approved

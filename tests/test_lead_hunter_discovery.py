@@ -250,6 +250,9 @@ def test_tls_socket_uses_exact_validated_ip_and_original_hostname(monkeypatch):
             return ('8.8.8.8', 443)
     peer = Peer()
     class Context:
+        verify_mode = public.ssl.CERT_REQUIRED
+        check_hostname = True
+
         def wrap_socket(self, raw, *, server_hostname):
             trace.append(server_hostname)
             return raw

@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     bitrix24_open_channels_test_chat_ids: set[int] = Field(default_factory=set)
     control_ai_enabled: bool = False
     control_gemini_key: Optional[SecretStr] = None
-    control_ai_model: str = Field(default='gemini-2.5-flash', pattern=r'^[a-zA-Z0-9.-]{1,100}$')
+    control_ai_model: str = Field(default='gemini-3.8-flash', pattern=r'^[a-zA-Z0-9.-]{1,100}$')
     control_ai_proxy: Optional[str] = None
     control_ai_daily_calls: int = Field(default=30, ge=1, le=100)
     control_secure_cookie: bool = True

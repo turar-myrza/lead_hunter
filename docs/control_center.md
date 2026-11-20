@@ -16,7 +16,7 @@ python -m app.control_worker
 Set `LEAD_HUNTER_API_TOKEN` to a high-entropy private operator password, and
 `LEAD_HUNTER_DB` / `LEAD_HUNTER_OUTPUT` to private writable locations. Configure
 `CONTROL_AI_ENABLED=true`, `CONTROL_GEMINI_KEY` and `CONTROL_AI_MODEL` for the
-existing authorized Gemini service. Default model is gemini-2.5-flash. Optional
+existing authorized Gemini service. Default model is gemini-3.8-flash. Optional
 `CONTROL_AI_PROXY` uses an operator-controlled proxy. `CONTROL_AI_DAILY_CALLS`
 defaults to 30 including failed/reserved calls, with 6,000 output tokens/request.
 No automatic retries, provider fallback, subscriptions or key acquisition.
@@ -87,3 +87,22 @@ are not invented; outcome ingestion into the universal ledger remains future wor
 Keep server environment, SQLite, private material, reports and recordings out of
 Git. The worker and web service should run as an unprivileged account, with only
 state/output directories writable. Preserve old inbound telephony services.
+
+## Deployed access (20 November 2026)
+
+Open `https://panel.whatsappcalls.kz/platform` and use the operator password
+provided privately by the deployment operator. Do not put credentials in GitHub.
+The browser stores a Secure, HttpOnly, SameSite=Strict session cookie. Review
+**AI Product Intelligence**, then **Target Audience** for product 1. Generated
+segments are hypotheses and remain unapproved. Review queries and prospect
+qualification criteria before approving; approval is not outreach permission.
+
+The apex `whatsappcalls.kz` currently resolves to another website host. Serving
+`/platform` there requires a path proxy on that host; the working panel address
+needs no DNS change. Services: `lead-hunter-web`, `lead-hunter-worker`; persistent
+state: `/var/lib/lead-hunter`; protected settings: `/etc/lead-hunter/control.env`.
+Use `systemctl status` to check services without printing environment values.
+Current model: Gemini 3.8 Flash, verified by a completed real analysis. Configured
+Bitrix24 credential has Open Channels but not CRM scope; relationship-history
+checks remain blocked until CRM permission is supplied. No live discovery or
+outreach was performed in this deployment verification.
