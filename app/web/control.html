@@ -1,3 +1,97 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CRM Consulting · Control Center</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%231b6e58%27/%3E%3C/svg%3E"><link rel="stylesheet" href="/platform/assets/control.css"><script defer src="/platform/assets/control.js"></script></head><body>
-<section id="login" class="login"><div class="brand">CRM CONSULTING</div><h1>Sales Intelligence<br>Control Center</h1><p>One workspace. From a product brief to an evidenced opportunity.</p><form id="login-form"><label>Access password<input id="password" type="password" autocomplete="current-password" required></label><button>Sign in securely</button></form><p class="muted">Private workspace · no automatic outreach</p></section>
-<div id="shell" hidden><aside><div class="brand">CRM CONSULTING</div><p class="muted">Universal sales platform</p><nav id="nav"></nav><div class="boundary">REVIEW FIRST<br><small>CRM writes and external outreach disabled.<br>Kazakh voice: not approved.</small></div><button id="logout" class="secondary">Sign out</button></aside><main><header><div><p class="eyebrow">PRODUCT → OPPORTUNITY</p><h1 id="title">Products</h1></div><span id="connection" class="badge">Connected</span></header><div id="content"></div></main></div><div id="notice" role="status" aria-live="polite" hidden></div><dialog id="editor"><form id="editor-form"><h2 id="editor-title"></h2><div id="editor-fields"></div><div class="actions"><button type="button" id="cancel" class="secondary">Cancel</button><button type="submit">Save</button></div></form></dialog></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lead Hunter · CRM Consulting Operations Cockpit</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%2300f2fe%27/%3E%3Cpath d=%27M9 16l5 5 9-11%27 stroke=%27%230d1117%27 stroke-width=%273%27 fill=%27none%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/platform/assets/control.css">
+  <script defer src="/platform/assets/control.js"></script>
+</head>
+<body>
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <section id="login" class="login glass-panel">
+    <div class="brand-row">
+      <div class="brand-logo">LH</div>
+      <div>
+        <div class="brand">CRM CONSULTING</div>
+        <div class="brand-sub">Lead Hunter · Operations Cockpit</div>
+      </div>
+    </div>
+    <h1>B2B Sales & AI Telephony<br>Control Center</h1>
+    <p class="login-desc">Autonomous Lead Discovery · Asterisk Voice SDR · Meta WhatsApp Cloud Delivery</p>
+    <form id="login-form">
+      <label>Access Password
+        <input id="password" type="password" autocomplete="current-password" placeholder="Enter secure operator key" required>
+      </label>
+      <button type="submit" class="primary-btn">Sign in to Cockpit</button>
+    </form>
+    <div class="login-footer">
+      <span class="status-dot green"></span> Connected to <code>195.49.210.252:8088</code>
+    </div>
+  </section>
+
+  <div id="shell" hidden>
+    <aside class="glass-sidebar">
+      <div class="brand-row">
+        <div class="brand-logo">LH</div>
+        <div>
+          <div class="brand">CRM CONSULTING</div>
+          <div class="brand-sub">Universal Cockpit v1.6.0</div>
+        </div>
+      </div>
+      
+      <div class="system-status glass-card">
+        <div class="telemetry-item">
+          <span class="status-dot green pulse"></span>
+          <span>Voice SDR: <strong>Asterisk Live</strong></span>
+        </div>
+        <div class="telemetry-item">
+          <span class="status-dot green"></span>
+          <span>AI Engine: <strong>Gemini Flash</strong></span>
+        </div>
+        <div class="telemetry-item">
+          <span class="status-dot green"></span>
+          <span>WhatsApp: <strong>Meta Cloud API</strong></span>
+        </div>
+      </div>
+
+      <nav id="nav"></nav>
+
+      <div class="sidebar-footer">
+        <button id="logout" class="secondary-btn">Sign out</button>
+      </div>
+    </aside>
+
+    <main>
+      <header class="glass-header">
+        <div>
+          <p class="eyebrow" id="eyebrow">AUTONOMOUS OPERATIONS</p>
+          <h1 id="title">Live Outreach & Voice SDR</h1>
+        </div>
+        <div class="header-badges">
+          <span id="telephony-badge" class="badge live-badge">📞 PBX: 185.22.64.70</span>
+          <span id="connection" class="badge">Connected</span>
+        </div>
+      </header>
+
+      <div id="content"></div>
+    </main>
+  </div>
+
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="editor" class="glass-dialog">
+    <form id="editor-form">
+      <h2 id="editor-title"></h2>
+      <div id="editor-fields"></div>
+      <div class="actions">
+        <button type="button" id="cancel" class="secondary-btn">Cancel</button>
+        <button type="submit" class="primary-btn">Save</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

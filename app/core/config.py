@@ -32,10 +32,15 @@ class Settings(BaseSettings):
     bitrix24_open_channels_test_chat_ids: set[int] = Field(default_factory=set)
     control_ai_enabled: bool = False
     control_gemini_key: Optional[SecretStr] = None
-    control_ai_model: str = Field(default='gemini-3.8-flash', pattern=r'^[a-zA-Z0-9.-]{1,100}$')
+    control_ai_model: str = Field(default='gemini-flash-latest', pattern=r'^[a-zA-Z0-9.-]{1,100}$')
     control_ai_proxy: Optional[str] = None
-    control_ai_daily_calls: int = Field(default=30, ge=1, le=100)
+    control_ai_daily_calls: int = Field(default=1000, ge=1, le=50000)
     control_secure_cookie: bool = True
+    telephony_host: str = Field(default="185.22.64.70")
+    telephony_ssh_user: str = Field(default="debian")
+    telephony_caller_script: str = Field(default="/home/debian/bitrix_pbx/outbound_caller.py")
+    meta_access_token: Optional[SecretStr] = None
+    meta_phone_id: str = Field(default="1344487605411939")
 
     @field_validator("bitrix24_webhook_url", mode="before")
     @classmethod

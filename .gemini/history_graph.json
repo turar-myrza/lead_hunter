@@ -54,5 +54,12 @@
     "result_summary": "1) Registered and received Meta approval for Kazakh translation of commercial_offer_pdf_doc (WABA 891036053865144, id: 1502195861724590) with native DOCUMENT header; 2) Updated prompt_library.py (v3.3.28) with real B2B sales manager objection handling in Kazakh (supplier, email/spam, pricing, busy) and strict 2-way phone question; 3) Upgraded bitrix_ai_gateway.py (v3.3.28) to auto-dispatch approved Kazakh/Russian commercial_offer_pdf_doc template with embedded PDF header; 4) Created templates/commercial_offer_template_kz.docx and updated offer_generator.py (v1.5.4) to generate 2-page Kazakh centrifuge PDF, hosted at https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges_kz.pdf; 5) Deployed to production telephony VPS (185.22.64.70) and verified live delivery to +77056945245.",
     "parent": "node-1.5.5-laboratory-centrifuges-offer-and-call",
     "timestamp": "2026-11-20T16:05:00+05:00"
+  },
+  {
+    "id": "node-1.6.0-rebuilt-leadhunter-cockpit-and-outreach-architecture",
+    "prompt_summary": "Rebuild control panel at leadhunter.crmconsulting.kz with proper architecture, live Asterisk voice calling, Meta WhatsApp Cloud offer dispatch, replace expired AI key with production Gemini Flash without limits, and dark Apple Liquid Glass cockpit",
+    "result_summary": "1) Rebuilt web control center at https://leadhunter.crmconsulting.kz/platform/ with dark Apple Liquid Glass aesthetics, responsive panels, live telemetry pills, and zero interference with panel.whatsappcalls.kz; 2) Configured production Gemini key with gemini-flash-latest and raised daily cap to 1000 calls; 3) Upgraded calling/pbx_caller.py to support remote SSH execution to Asterisk PBX (185.22.64.70) under service user lead-hunter; 4) Implemented POST /platform/api/outreach/call and POST /platform/api/outreach/offer with Meta approved commercial_offer_pdf_doc template (kk/ru); 5) Added live product catalog (Centrifuges, Tires, Scalpel blades) with downloadable 2-page PDFs; 6) Bumped version to 1.6.0 and verified live call and WhatsApp dispatch to +77056945245.",
+    "parent": "node-1.5.6-kazakh-language-integration",
+    "timestamp": "2026-11-20T18:04:00+05:00"
   }
 ]

@@ -3,21 +3,24 @@ Bitrix PBX Calling Bridge for Lead Hunter
 Connects Lead Hunter directly to Bitrix PBX AI Voice Gateway without copying
 or duplicating the Asterisk / Gemini Live telephony infrastructure.
 
-Allows mapping:
-- Group of numbers A -> Product A (e.g. Disposable surgery scalpel blades)
-- Group of numbers B -> Products A & B
-- Directly dials target leads via Asterisk PBX with tailored AI prompts.
+Supports:
+- Local execution if running directly on telephony VPS (/home/debian/bitrix_pbx)
+  or Windows dev mount (/mnt/d/projects/bitrix_pbx).
+- Authenticated SSH execution from whatflow (195.49.210.252) to ai_telephony (185.22.64.70).
 """
 
 import os
 import sys
 import subprocess
+import shlex
 from typing import List, Optional, Dict, Any
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 
-PBX_DIR = "/mnt/d/projects/bitrix_pbx"
-OUTBOUND_CALLER_SCRIPT = os.path.join(PBX_DIR, "outbound_caller.py")
+DEFAULT_TELEPHONY_HOST = os.getenv("TELEPHONY_HOST", "185.22.64.70")
+DEFAULT_SSH_USER = os.getenv("TELEPHONY_SSH_USER", "debian")
+DEFAULT_REMOTE_SCRIPT = os.getenv("TELEPHONY_CALLER_SCRIPT", "/home/debian/bitrix_pbx/outbound_caller.py")
+LOCAL_DEV_SCRIPT = "/mnt/d/projects/bitrix_pbx/outbound_caller.py"
 
 
 def call_lead(
@@ -26,62 +29,100 @@ def call_lead(
     details: str = "",
     ceo: str = "",
     biz: str = "",
-    lang: str = "ru",
+    lang: str = "kz",
     greeting: str = "",
-) -> bool:
+    host: Optional[str] = None,
+    user: Optional[str] = None,
+    remote_script: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    Triggers an outbound AI call to a target lead via Bitrix PBX.
-    Uses the tailored product pitch and custom opening greeting.
+    Triggers an outbound AI call to a target lead via Bitrix PBX Asterisk gateway.
     """
-    if not os.path.exists(OUTBOUND_CALLER_SCRIPT):
-        raise FileNotFoundError(f"Bitrix PBX caller not found at {OUTBOUND_CALLER_SCRIPT}")
+    is_local = os.path.exists(DEFAULT_REMOTE_SCRIPT)
+    is_dev = os.path.exists(LOCAL_DEV_SCRIPT)
 
-    cmd = [
-        sys.executable,
-        OUTBOUND_CALLER_SCRIPT,
-        phone,
-        "--lang",
-        lang,
-    ]
+    args = [phone, "--lang", lang]
     for p in products:
-        cmd.extend(["--product", p])
+        args.extend(["--product", p])
     if details:
-        cmd.extend(["--details", details])
+        args.extend(["--details", details])
     if ceo:
-        cmd.extend(["--ceo", ceo])
+        args.extend(["--ceo", ceo])
     if biz:
-        cmd.extend(["--biz", biz])
+        args.extend(["--biz", biz])
     if greeting:
-        cmd.extend(["--greeting", greeting])
+        args.extend(["--greeting", greeting])
 
-    print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Initiating AI call to {phone}...")
-    print(f"Products: {', '.join(products)}")
-    res = subprocess.run(cmd)
-    return res.returncode == 0
+    if is_local:
+        cmd = [sys.executable, DEFAULT_REMOTE_SCRIPT] + args
+        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Local AI call to {phone}...")
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        return {
+            "success": res.returncode == 0,
+            "returncode": res.returncode,
+            "stdout": res.stdout,
+            "stderr": res.stderr,
+            "mode": "local",
+        }
+    elif is_dev:
+        cmd = [sys.executable, LOCAL_DEV_SCRIPT] + args
+        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Dev AI call to {phone}...")
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        return {
+            "success": res.returncode == 0,
+            "returncode": res.returncode,
+            "stdout": res.stdout,
+            "stderr": res.stderr,
+            "mode": "dev",
+        }
+    else:
+        target_host = host or DEFAULT_TELEPHONY_HOST
+        target_user = user or DEFAULT_SSH_USER
+        script_path = remote_script or DEFAULT_REMOTE_SCRIPT
+
+        remote_cmd_parts = ["python3", script_path] + [shlex.quote(a) for a in args]
+        remote_cmd_str = " ".join(remote_cmd_parts)
+
+        ssh_cmd = [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "ConnectTimeout=10",
+        ]
+        key_path = "/var/lib/lead-hunter/.ssh/id_ed25519"
+        if os.path.exists(key_path):
+            ssh_cmd.extend(["-i", key_path])
+        ssh_cmd.extend([
+            f"{target_user}@{target_host}",
+            remote_cmd_str,
+        ])
+
+        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Remote SSH AI call via {target_host} to {phone}...")
+        res = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=120)
+        return {
+            "success": res.returncode == 0,
+            "returncode": res.returncode,
+            "stdout": res.stdout,
+            "stderr": res.stderr,
+            "mode": "ssh_remote",
+            "host": target_host,
+        }
 
 
 def call_group_by_products(
     group_mapping: Dict[str, List[str]],
     product_details_map: Optional[Dict[str, str]] = None,
-    lang: str = "ru",
+    lang: str = "kz",
 ):
-    """
-    Dials a group of numbers, where each number is mapped to its target products.
-    Example:
-        group_mapping = {
-            "+77017211156": ["Одноразовые лезвия для хирургического скальпеля"],
-            "+77071010122": ["Одноразовые лезвия для хирургического скальпеля", "Стерильные перчатки"],
-        }
-    """
     details_map = product_details_map or {}
     results = {}
     for phone, products in group_mapping.items():
         combined_details = " \n".join([details_map.get(p, "") for p in products if p in details_map])
-        success = call_lead(
+        result = call_lead(
             phone=phone,
             products=products,
             details=combined_details,
             lang=lang,
         )
-        results[phone] = success
+        results[phone] = result
     return results

@@ -1,41 +1,642 @@
 'use strict';
-const $=id=>document.getElementById(id);
-let state=null,section='Products',selected=null,saveEditor=null;
-const sections=['Products','AI Product Intelligence','Target Audience','Discovery','Prospects','CRM Integration','AI Engagement','Analytics'];
-function el(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
-function add(parent,...nodes){for(const n of nodes)parent.append(n);return parent;}
-function button(text,action,secondary=false){const b=el('button',text,secondary?'secondary':'');b.type='button';b.onclick=async()=>{b.disabled=true;try{await action();}catch(e){notice(e.message);}finally{b.disabled=false;}};return b;}
-function notice(text){$('notice').textContent=text;$('notice').hidden=false;setTimeout(()=>$('notice').hidden=true,10000);}
-async function api(path,method='GET',data){const r=await fetch('/platform/api'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-Control-Request':'1'},body:data===undefined?undefined:JSON.stringify(data)});const body=await r.json();if(!r.ok){if(r.status===401){$('shell').hidden=true;$('login').hidden=false;}throw Error(typeof body.detail==='string'?body.detail:JSON.stringify(body.detail));}return body;}
-async function refresh(renderPage=true){state=await api('/state');$('shell').hidden=false;$('login').hidden=true;$('connection').textContent='Connected · '+new Date().toLocaleTimeString();if(!selected&&state.products.length)selected=state.products[0].id;if(renderPage)render();}
-function paragraph(parent,text,cls){parent.append(el('p',text,cls));}
-function card(title){const c=el('article',undefined,'card');c.append(el('h3',title));return c;}
-function badge(text){return el('span',text,'badge');}
-function details(parent,title,value){const d=el('details');add(d,el('summary',title),el('pre',typeof value==='string'?value:JSON.stringify(value,null,2)));parent.append(d);}
-function list(parent,title,values){parent.append(el('h4',title));const ul=el('ul');for(const value of values||[])ul.append(el('li',value));parent.append(ul);}
-function productPicker(parent){const label=el('label','Product');const s=el('select');for(const p of state.products){const o=el('option',p.payload.brief.name);o.value=p.id;s.append(o);}s.value=selected;s.onchange=()=>{selected=Number(s.value);render();};label.append(s);parent.append(label);}
-function current(){return state.products.find(p=>p.id===selected);}
-function field(parent,key,label,value='',type='text'){const l=el('label',label);const n=el(type==='textarea'?'textarea':'input');n.name=key;if(type!=='textarea')n.type=type;if(type==='checkbox')n.checked=Boolean(value);else n.value=value??'';l.append(n);parent.append(l);return n;}
-function edit(title,build,save){$('editor-title').textContent=title;$('editor-fields').replaceChildren();build($('editor-fields'));saveEditor=save;$('editor').showModal();}
-function values(){const result={};for(const n of $('editor-fields').querySelectorAll('input,textarea,select'))result[n.name]=n.type==='checkbox'?n.checked:n.value;return result;}
-const lines=s=>s.split('\n').map(x=>x.trim()).filter(Boolean);
-function editProduct(p){edit(p?'Edit product':'New product',f=>{const v=p?.payload||{},b=v.brief||{};field(f,'name','Product or service',b.name);field(f,'description','Description',b.description,'textarea');field(f,'category','Category',b.category);field(f,'market','Target market',b.market);field(f,'problem_hint','Known customer problem (optional)',b.problem_hint,'textarea');field(f,'organization','Organizations / B2B',(b.buyer_paths||['organization','individual']).includes('organization'),'checkbox');field(f,'individual','Individuals / families',(b.buyer_paths||['organization','individual']).includes('individual'),'checkbox');field(f,'pricing','Pricing / terms; leave blank when unknown',v.pricing);field(f,'advantages','Advantages — one per line',(v.advantages||[]).join('\n'),'textarea');field(f,'problems','Customer problems — one per line',(v.customer_problems||[]).join('\n'),'textarea');field(f,'references','Public reference URLs — one per line',(v.references||[]).join('\n'),'textarea');field(f,'materials','Public supporting material (text; no CRM history or personal data)',v.materials,'textarea');field(f,'public','I authorize analysis of this public product material by the configured AI service',v.public_analysis_allowed,'checkbox');},async v=>{const payload={brief:{name:v.name,description:v.description,category:v.category,market:v.market,problem_hint:v.problem_hint||null,buyer_paths:['organization','individual'].filter(x=>v[x])},pricing:v.pricing,advantages:lines(v.advantages),customer_problems:lines(v.problems),references:lines(v.references),materials:v.materials,public_analysis_allowed:v.public};const saved=await api(p?'/products/'+p.id:'/products',p?'PUT':'POST',payload);selected=saved.id;await refresh();});}
-function editSegment(s){edit('Review audience and search strategy',f=>{const v=s.payload;field(f,'name','Segment',v.name);field(f,'characteristics','Ideal customer profile',v.characteristics,'textarea');for(const [key,label] of [['roles','Buyer roles'],['motivations','Buyer motivations'],['signals','Buying signals'],['queries','Search queries (up to four)'],['criteria','Qualification criteria'],['source_urls','Optional public source URLs (up to 20)']])field(f,key,label+' — one per line',(v[key]||[]).join('\n'),'textarea');field(f,'approved','Approve this segment for discovery',s.approved,'checkbox');},async v=>{const segment={...s.payload,name:v.name,characteristics:v.characteristics};for(const key of ['roles','motivations','signals','queries','criteria','source_urls'])segment[key]=lines(v[key]);await api('/segments/'+s.id,'PUT',{segment,approved:v.approved});await refresh();});}
-function jobs(){return state.jobs.filter(j=>j.product_id===selected);}
-function render(){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.textContent===section));$('title').textContent=section;const root=$('content');root.replaceChildren();
- if(section==='Products'){paragraph(root,'Create a product once. Intelligence, audiences, evidence and opportunities stay connected to its revision.','lead');root.append(button('＋ New product',()=>editProduct()));const grid=el('div',undefined,'grid');for(const p of state.products){const c=card(p.payload.brief.name);add(c,badge(p.payload.brief.buyer_paths.join(' · ')));paragraph(c,p.payload.brief.description);paragraph(c,p.payload.brief.market+' · revision '+p.revision,'muted');add(c,add(el('div',undefined,'actions'),button('Select & analyze',()=>{selected=p.id;section='AI Product Intelligence';render();}),button('Edit',()=>editProduct(p),true)));grid.append(c);}root.append(grid);if(!state.products.length)paragraph(root,'No product profiles yet. Create your first brief.','empty');return;}
- if(['AI Product Intelligence','Target Audience','Discovery','Prospects'].includes(section)){productPicker(root);if(!current()){paragraph(root,'Create a product profile first.','empty');return;}}
- if(section==='AI Product Intelligence'){paragraph(root,'AI analysis uses authorized public product material only. All generated benefits and segments are hypotheses, not verified customer facts.','lead');root.append(button('Analyze selected product',async()=>{const j=await api('/products/'+selected+'/analyze','POST');notice('Analysis queued · job '+j.id);await refresh();}));for(const job of jobs().filter(j=>j.kind==='analysis')){const c=card('Analysis #'+job.id+' · revision '+job.revision);add(c,badge(job.status));if(job.error)paragraph(c,job.error);const a=job.result?.analysis;if(a){paragraph(c,a.value_proposition);for(const [key,label] of [['problems_solved','Problems addressed'],['use_cases','Use cases'],['purchase_barriers','Purchase barriers'],['missing_information','Missing information']])list(c,label,a[key]);paragraph(c,'Confidence: unverified AI hypotheses · '+job.result.model,'muted');details(c,'Evidence basis',job.payload);c.append(button('Review buyer profiles',()=>{section='Target Audience';render();}));}root.append(c);}return;}
- if(section==='Target Audience'){paragraph(root,'AI-generated hypotheses, not verified facts about customers. Motivations explain the proposed product fit. Review roles, buying signals, search queries and qualification criteria before approval; queries may also return vendors. Product references are not evidence of buyer demand. Editing the product invalidates its earlier approvals.','lead');for(const s of state.segments.filter(s=>s.product_id===selected)){const c=card(s.payload.name);add(c,badge(s.payload.path+' · '+(s.approved?'approved':'review required')));paragraph(c,s.payload.characteristics);list(c,'Buyer roles',s.payload.roles);list(c,'Motivations',s.payload.motivations);list(c,'Buying signals',s.payload.signals);list(c,'Search strategy',s.payload.queries);list(c,'Qualification criteria',s.payload.criteria);add(c,button('Review / approve',()=>editSegment(s)));root.append(c);}return;}
- if(section==='Discovery'){paragraph(root,'Product-derived queries search GDELT and approved public URLs. The application verifies page excerpts. Social search and private-group access are not available. Individual journeys require an inbound adapter.','lead');for(const s of state.segments.filter(s=>s.product_id===selected&&s.approved)){const c=card(s.payload.name);c.append(button('Start discovery · target 20',async()=>{const j=await api('/campaigns','POST',{segment_id:s.id,target:20});notice('Campaign queued · job '+j.id);await refresh();}));root.append(c);}for(const j of jobs().filter(j=>j.kind==='discovery')){const c=card('Campaign #'+j.id);add(c,badge(j.status));paragraph(c,'Target: '+j.payload.target+' · Found: '+(j.result?.found??'pending'));if(j.error)paragraph(c,j.error);if(j.workflow)for(const step of j.workflow.stages)paragraph(c,step.stage+' — '+step.status+' · '+step.detail);if(j.result?.shortfall)paragraph(c,'Shortfall: '+j.result.shortfall+'; no substitute or invented results.');details(c,'Workflow details',j.workflow||j.result||{});root.append(c);}return;}
- if(section==='Prospects'){paragraph(root,'Scores below measure evidence completeness, not purchase intent. Website publication is not permission to contact. Qualification is a separate manager decision.','lead');let count=0;for(const j of jobs())for(const o of j.opportunities||[]){count++;const p=o.candidate,review=state.reviews.find(r=>r.job_id===j.id&&r.candidate_id===p.id),crm=j.result?.crm?.[p.id];const kinds=new Set(p.evidence.map(e=>e.kind));const score=(kinds.has('identity')?20:0)+(kinds.has('need')?40:0)+(p.roles.length?20:0)+(kinds.has('business_contact')?20:0);const c=card(p.label);add(c,badge(review?.payload.state||o.qualification.state));paragraph(c,(p.industry||'Industry requires verification')+' · '+(p.location||'Location unknown'));paragraph(c,'Evidence completeness '+score+'/100 · CRM: '+(crm?.state||o.crm_check));paragraph(c,'Product-fit hypothesis: '+o.inferred_need);paragraph(c,'Verified business contact: not established. CRM status: not synchronized.','muted');for(const e of p.evidence){const block=el('blockquote',e.kind+': '+e.excerpt);if(e.url){const a=el('a','Source');a.href=e.url;a.target='_blank';a.rel='noopener noreferrer';block.append(el('br'),a);}paragraph(block,'Checked: '+(e.observed_at||e.observed_on||'unknown')+' · Published: '+(e.published_on||'unknown'),'muted');c.append(block);}details(c,'Buyer roles / unresolved questions',{roles:p.roles,questions:o.unresolved_questions});details(c,'CRM history check',crm||{});if(review)paragraph(c,'Manager: '+review.payload.rationale+' Next: '+review.payload.next_action);c.append(button('Review qualification',()=>edit('Review '+p.label,f=>{field(f,'state','State: qualified / needs_review / excluded',review?.payload.state||'needs_review');field(f,'ethics','Ethical review passed: no prohibited sector or unresolved restriction',review?.payload.ethics_passed||false,'checkbox');field(f,'rationale','Evidence-based rationale',review?.payload.rationale||'','textarea');field(f,'evidence','Evidence IDs (one per line)',p.evidence.map(e=>e.id).join('\n'),'textarea');field(f,'next_action','Next action',review?.payload.next_action||o.next_action,'textarea');},async v=>{await api('/jobs/'+j.id+'/prospects/'+p.id+'/review','PUT',{state:v.state,ethics_passed:v.ethics,rationale:v.rationale,evidence_ids:lines(v.evidence),next_action:v.next_action});await refresh();})));if(review?.payload.state==='qualified')c.append(button('Prepare CRM handoff',async()=>{const draft=await api('/jobs/'+j.id+'/prospects/'+p.id+'/handoff','POST');details(c,'Prepared handoff — not sent',draft);notice('Handoff prepared locally. CRM writes remain disabled.');},true));root.append(c);}if(!count)paragraph(root,'No discovered prospects yet. Approve an audience and launch a campaign.','empty');return;}
- if(section==='CRM Integration'){paragraph(root,'Read-only relationship checks precede handoff. Production lead creation is unavailable in this milestone.','lead');const c=card('Bitrix24');paragraph(c,'Credential configured: '+state.capabilities.crm_configured);c.append(button('Verify connection (read only)',async()=>details(c,'Live connection check',await api('/crm-status'))));root.append(c);for(const h of state.handoffs||[])details(root,'Prepared handoff · '+h.candidate_id,h.payload);paragraph(root,'Prepared handoffs are available from manager-qualified prospects. Every write still requires separate authorization and an implemented executor.');return;}
- if(section==='AI Engagement'){const c=card('Regular SIP · Voice SDR');add(c,badge('CEO voice quality: NOT APPROVED'));paragraph(c,'Existing SIP infrastructure is preserved. The CEO test was manually operated outside this orchestrator; it is not an automated platform campaign.');paragraph(c,'External calls: disabled. No call action is offered in this milestone.');root.append(c);const m=card('Messaging and follow-up');paragraph(m,'Open Channels adapter supports linked conversation review and separately gated test replies. This panel does not authorize sends. Follow-up execution is not yet integrated.');root.append(m);for(const j of state.jobs)for(const o of j.opportunities||[]){const p=card(o.candidate.label);paragraph(p,'Proposed first action: '+o.engagement.first_action);paragraph(p,'Follow-up plan: '+o.engagement.follow_up);paragraph(p,'Script: pending content review; no approved script exists.');root.append(p);}return;}
- if(section==='Analytics'){paragraph(root,'Worker last heartbeat: '+(state.worker_heartbeat||'not observed'),'muted');paragraph(root,'Statistics come from saved workflow records. No inferred conversion rates, meetings or sales are displayed.','lead');const grid=el('div',undefined,'grid');for(const [label,value] of Object.entries(state.job_totals)){const c=card(label+' jobs');c.append(el('div',value,'metric'));grid.append(c);}root.append(grid);const c=card('Model usage');paragraph(c,'Daily request cap: '+state.capabilities.daily_ai_call_limit+'. Token usage is recorded; monetary cost is unavailable and must be checked with the provider.');details(c,'Usage records',state.usage);root.append(c);details(root,'Audit trail',state.audit);paragraph(root,'Outcome integration: incomplete. No platform-observed sales or meeting outcomes are currently reported.');}
+
+const $ = id => document.getElementById(id);
+let state = null;
+let section = 'Live Outreach & Voice SDR';
+let selected = null;
+let saveEditor = null;
+let activePhone = '+77056945245';
+let activeProduct = 'centrifuges';
+let activeLang = 'kz';
+let activeDetails = '';
+
+const sections = [
+  'Live Outreach & Voice SDR',
+  'Product Catalog & Offers',
+  'AI Product Intelligence',
+  'Target Audience & ICP',
+  'Lead Discovery',
+  'CRM Integration',
+  'Outreach Analytics'
+];
+
+function el(tag, text, cls) {
+  const n = document.createElement(tag);
+  if (text !== undefined) n.textContent = text;
+  if (cls) n.className = cls;
+  return n;
 }
-for(const name of sections)$('nav').append(button(name,()=>{section=name;render();}));
-$('login-form').onsubmit=async e=>{e.preventDefault();try{await api('/login','POST',{password:$('password').value});$('password').value='';await refresh();}catch(err){notice(err.message);}};
-$('logout').onclick=async()=>{await api('/logout','POST');state=null;$('shell').hidden=true;$('login').hidden=false;};
-$('cancel').onclick=()=>$('editor').close();
-$('editor-form').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;try{await saveEditor(values());$('editor').close();notice('Saved');}catch(err){notice(err.message);}finally{b.disabled=false;}};
-refresh().catch(()=>{});setInterval(()=>{if(state&&!$('editor').open)refresh().catch(e=>{$('connection').textContent='Connection unavailable';});},8000);
+
+function add(parent, ...nodes) {
+  for (const n of nodes) parent.append(n);
+  return parent;
+}
+
+function button(text, action, cls = 'primary-btn') {
+  const b = el('button', text, cls);
+  b.type = 'button';
+  b.onclick = async () => {
+    b.disabled = true;
+    try {
+      await action();
+    } catch (e) {
+      notice(e.message);
+    } finally {
+      b.disabled = false;
+    }
+  };
+  return b;
+}
+
+function notice(text) {
+  const n = $('notice');
+  n.textContent = text;
+  n.hidden = false;
+  setTimeout(() => n.hidden = true, 9000);
+}
+
+async function api(path, method = 'GET', data) {
+  const r = await fetch('/platform/api' + path, {
+    method,
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Control-Request': '1'
+    },
+    body: data === undefined ? undefined : JSON.stringify(data)
+  });
+  const body = await r.json();
+  if (!r.ok) {
+    if (r.status === 401) {
+      $('shell').hidden = true;
+      $('login').hidden = false;
+    }
+    throw Error(typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail));
+  }
+  return body;
+}
+
+async function refresh(renderPage = true) {
+  state = await api('/state');
+  $('shell').hidden = false;
+  $('login').hidden = true;
+  $('connection').textContent = 'Live · ' + new Date().toLocaleTimeString();
+  
+  if (state.capabilities?.telephony_host) {
+    $('telephony-badge').textContent = '📞 PBX: ' + state.capabilities.telephony_host;
+  }
+  if (!selected && state.products?.length) {
+    selected = state.products[0].id;
+  }
+  if (renderPage) render();
+}
+
+function paragraph(parent, text, cls) {
+  parent.append(el('p', text, cls));
+}
+
+function card(title, cls = '') {
+  const c = el('article', undefined, 'card ' + cls);
+  c.append(el('h3', title));
+  return c;
+}
+
+function badge(text, cls = '') {
+  return el('span', text, 'badge ' + cls);
+}
+
+function details(parent, title, value) {
+  const d = el('details');
+  add(d, el('summary', title), el('pre', typeof value === 'string' ? value : JSON.stringify(value, null, 2)));
+  parent.append(d);
+}
+
+function list(parent, title, values) {
+  parent.append(el('h4', title));
+  const ul = el('ul');
+  for (const value of values || []) ul.append(el('li', value));
+  parent.append(ul);
+}
+
+function lines(s) {
+  return (s || '').split('\n').map(x => x.trim()).filter(Boolean);
+}
+
+function edit(title, build, save) {
+  $('editor-title').textContent = title;
+  $('editor-fields').replaceChildren();
+  build($('editor-fields'));
+  saveEditor = save;
+  $('editor').showModal();
+}
+
+function values() {
+  const result = {};
+  for (const n of $('editor-fields').querySelectorAll('input,textarea,select')) {
+    result[n.name] = n.type === 'checkbox' ? n.checked : n.value;
+  }
+  return result;
+}
+
+function field(parent, key, label, value = '', type = 'text') {
+  const l = el('label', label);
+  const n = el(type === 'textarea' ? 'textarea' : 'input');
+  n.name = key;
+  if (type !== 'textarea') n.type = type;
+  if (type === 'checkbox') n.checked = Boolean(value);
+  else n.value = value ?? '';
+  l.append(n);
+  parent.append(l);
+  return n;
+}
+
+function current() {
+  return state.products?.find(p => p.id === selected);
+}
+
+function jobs() {
+  return (state.jobs || []).filter(j => j.product_id === selected);
+}
+
+/* =====================================================================
+   RENDER FUNCTION
+   ===================================================================== */
+function render() {
+  document.querySelectorAll('nav button').forEach(b => {
+    b.classList.toggle('active', b.dataset.section === section);
+  });
+  $('title').textContent = section;
+  const root = $('content');
+  root.replaceChildren();
+
+  /* ------------------------------------------------------------------
+     1. LIVE OUTREACH & VOICE SDR
+     ------------------------------------------------------------------ */
+  if (section === 'Live Outreach & Voice SDR') {
+    paragraph(root, 'Direct control cockpit for Asterisk PBX voice calls and Meta WhatsApp Cloud commercial offer delivery with dynamic PDF generation in Kazakh and Russian.', 'lead');
+
+    const cockpit = el('div', undefined, 'outreach-cockpit');
+
+    // Left Panel: Lead & Outreach Controls
+    const left = el('div', undefined, 'cockpit-panel');
+    left.append(el('h3', '📞 Оперативті хабарласу / Voice SDR & WhatsApp'));
+
+    // Target Phone
+    const phoneLabel = el('label', 'Мақсатты телефон нөмірі / Target Phone (E.164)');
+    const phoneInput = el('input');
+    phoneInput.type = 'tel';
+    phoneInput.value = activePhone;
+    phoneInput.placeholder = '+77056945245';
+    phoneInput.oninput = e => { activePhone = e.target.value.trim(); };
+    phoneLabel.append(phoneInput);
+    left.append(phoneLabel);
+
+    // Quick Presets
+    const pills = el('div', undefined, 'quick-pills');
+    const presets = [
+      { label: 'Басшылық (+7 705 694-52-45)', phone: '+77056945245' },
+      { label: 'Дәурен (+7 701 721-11-56)', phone: '+77017211156' },
+      { label: 'PBX Линиясы (+7 700 912-12-12)', phone: '+77009121212' }
+    ];
+    for (const p of presets) {
+      const pill = el('button', p.label, 'pill-btn' + (activePhone === p.phone ? ' active' : ''));
+      pill.type = 'button';
+      pill.onclick = () => {
+        activePhone = p.phone;
+        phoneInput.value = p.phone;
+        document.querySelectorAll('.quick-pills .pill-btn').forEach(b => b.classList.remove('active'));
+        pill.classList.add('active');
+      };
+      pills.append(pill);
+    }
+    left.append(pills);
+
+    // Language Toggle
+    left.append(el('label', 'Тіл таңдау / Language'));
+    const langDiv = el('div', undefined, 'lang-toggle');
+    const kzBtn = el('button', '🇰🇿 Қазақша', activeLang === 'kz' ? 'active' : '');
+    kzBtn.type = 'button';
+    kzBtn.onclick = () => { activeLang = 'kz'; render(); };
+    const ruBtn = el('button', '🇷🇺 Русский', activeLang === 'ru' ? 'active' : '');
+    ruBtn.type = 'button';
+    ruBtn.onclick = () => { activeLang = 'ru'; render(); };
+    add(langDiv, kzBtn, ruBtn);
+    left.append(langDiv);
+
+    // Custom Note / Context
+    const detailsLabel = el('label', 'Қосымша мәліметтер / Call Context (Optional)');
+    const detailsInput = el('input');
+    detailsInput.placeholder = 'Клиника басшысына арналған арнайы коммерциялық ұсыныс';
+    detailsInput.value = activeDetails;
+    detailsInput.oninput = e => { activeDetails = e.target.value; };
+    detailsLabel.append(detailsInput);
+    left.append(detailsLabel);
+
+    // Action Buttons
+    const actions = el('div', undefined, 'actions');
+    const callBtn = button('📞 Қоңырау шалу / Start AI Call', async () => {
+      if (!activePhone) throw Error('Телефон нөмірін енгізіңіз');
+      const catalog = state.catalog || [];
+      const item = catalog.find(c => c.id === activeProduct) || catalog[0];
+      const prodName = activeLang === 'kz' ? item.name : item.name_ru;
+      notice('Calling ' + activePhone + ' via Asterisk PBX (185.22.64.70)...');
+      const res = await api('/outreach/call', 'POST', {
+        phone: activePhone,
+        product: prodName,
+        lang: activeLang,
+        details: activeDetails
+      });
+      notice('Call initiated! Mode: ' + res.mode + ' · ' + activePhone);
+      await refresh();
+    }, 'call-btn');
+
+    const offerBtn = button('📄 WhatsApp арқылы КП жіберу', async () => {
+      if (!activePhone) throw Error('Телефон нөмірін енгізіңіз');
+      notice('Sending WhatsApp PDF offer to ' + activePhone + ' via Meta Cloud API...');
+      const res = await api('/outreach/offer', 'POST', {
+        phone: activePhone,
+        product: activeProduct,
+        lang: activeLang
+      });
+      notice('WhatsApp offer sent successfully! WAMID: ' + res.wamid);
+      await refresh();
+    }, 'whatsapp-btn');
+
+    add(actions, callBtn, offerBtn);
+    left.append(actions);
+    cockpit.append(left);
+
+    // Right Panel: Active Product Picker
+    const right = el('div', undefined, 'cockpit-panel');
+    right.append(el('h3', '📦 Тауар каталогы / Product to Pitch'));
+    const selector = el('div', undefined, 'product-selector');
+    const catalog = state.catalog || [];
+    for (const item of catalog) {
+      const opt = el('div', undefined, 'product-option' + (activeProduct === item.id ? ' selected' : ''));
+      const titleRow = el('div', undefined, 'product-title');
+      titleRow.append(el('span', activeLang === 'kz' ? item.name : item.name_ru));
+      titleRow.append(el('span', item.price_range, 'product-price'));
+      opt.append(titleRow);
+      opt.append(el('div', item.category, 'product-meta'));
+      opt.append(el('div', item.specs, 'product-meta'));
+
+      // PDF links
+      const links = el('div', undefined, 'actions');
+      const pdfKz = el('a', '📄 КП (KZ)', 'badge cyan-badge');
+      pdfKz.href = item.pdf_kz;
+      pdfKz.target = '_blank';
+      const pdfRu = el('a', '📄 КП (RU)', 'badge cyan-badge');
+      pdfRu.href = item.pdf_ru;
+      pdfRu.target = '_blank';
+      add(links, pdfKz, pdfRu);
+      opt.append(links);
+
+      opt.onclick = (e) => {
+        if (e.target.tagName === 'A') return;
+        activeProduct = item.id;
+        document.querySelectorAll('.product-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+      };
+      selector.append(opt);
+    }
+    right.append(selector);
+    cockpit.append(right);
+    root.append(cockpit);
+
+    // Live Outreach History Table
+    const histCard = card('📋 Соңғы қоңыраулар мен жіберілген ұсыныстар / Outreach Log Feed');
+    const outreach = state.outreach || { calls: [], offers: [] };
+    const allEvents = [
+      ...(outreach.calls || []).map(c => ({ type: 'call', ...c })),
+      ...(outreach.offers || []).map(o => ({ type: 'offer', ...o }))
+    ].sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+
+    if (allEvents.length) {
+      const table = el('table');
+      const thead = el('thead');
+      const trh = el('tr');
+      for (const th of ['Уақыты / Time', 'Арна / Channel', 'Нөмір / Phone', 'Тауар / Product', 'Тілі / Lang', 'Мәртебесі / Status', 'Нәтиже / Output']) {
+        trh.append(el('th', th));
+      }
+      thead.append(trh);
+      table.append(thead);
+
+      const tbody = el('tbody');
+      for (const ev of allEvents.slice(0, 15)) {
+        const tr = el('tr');
+        tr.append(el('td', (ev.at || '').replace('T', ' ').slice(0, 19)));
+        const chBadge = ev.type === 'call' ? badge('📞 Voice SDR', 'live-badge') : badge('💬 WhatsApp PDF', 'cyan-badge');
+        const tdCh = el('td');
+        tdCh.append(chBadge);
+        tr.append(tdCh);
+        tr.append(el('td', ev.phone));
+        tr.append(el('td', ev.product));
+        tr.append(el('td', ev.lang === 'kz' ? '🇰🇿 KZ' : '🇷🇺 RU'));
+        tr.append(el('td', ev.status));
+        tr.append(el('td', ev.response || ev.wamid || ev.error || 'ok'));
+        tbody.append(tr);
+      }
+      table.append(tbody);
+      histCard.append(table);
+    } else {
+      paragraph(histCard, 'No outreach events recorded yet. Place your first test call above.', 'muted');
+    }
+    root.append(histCard);
+    return;
+  }
+
+  /* ------------------------------------------------------------------
+     2. PRODUCT CATALOG & OFFERS
+     ------------------------------------------------------------------ */
+  if (section === 'Product Catalog & Offers') {
+    paragraph(root, 'Manage enterprise product profiles, verify official commercial offer PDFs, and configure pricing and advantage claims.', 'lead');
+    root.append(button('＋ Жаңа тауар қосу / New Product', () => editProduct()));
+
+    const grid = el('div', undefined, 'grid');
+    for (const p of state.products || []) {
+      const c = card(p.payload.brief.name);
+      add(c, badge(p.payload.brief.buyer_paths.join(' · '), 'cyan-badge'));
+      paragraph(c, p.payload.brief.description);
+      paragraph(c, (p.payload.brief.market || 'Kazakhstan') + ' · revision ' + p.revision, 'muted');
+      const acts = el('div', undefined, 'actions');
+      acts.append(button('Select & Analyze', () => {
+        selected = p.id;
+        section = 'AI Product Intelligence';
+        render();
+      }, 'secondary-btn'));
+      acts.append(button('Edit', () => editProduct(p), 'secondary-btn'));
+      c.append(acts);
+      grid.append(c);
+    }
+    root.append(grid);
+
+    // Official Catalogs Card
+    const catCard = card('Ресми коммерциялық ұсыныстар (PDF) / Official Offers');
+    const catGrid = el('div', undefined, 'grid');
+    for (const item of state.catalog || []) {
+      const c = card(item.name);
+      paragraph(c, item.category);
+      paragraph(c, 'Бағасы: ' + item.price_range, 'product-price');
+      paragraph(c, item.specs, 'muted');
+      const acts = el('div', undefined, 'actions');
+      const aKz = el('a', '📄 Ашу (Қазақша)', 'badge cyan-badge');
+      aKz.href = item.pdf_kz;
+      aKz.target = '_blank';
+      const aRu = el('a', '📄 Открыть (Русский)', 'badge cyan-badge');
+      aRu.href = item.pdf_ru;
+      aRu.target = '_blank';
+      add(acts, aKz, aRu);
+      c.append(acts);
+      catGrid.append(c);
+    }
+    catCard.append(catGrid);
+    root.append(catCard);
+    return;
+  }
+
+  /* ------------------------------------------------------------------
+     3. AI PRODUCT INTELLIGENCE
+     ------------------------------------------------------------------ */
+  if (section === 'AI Product Intelligence') {
+    paragraph(root, 'Gemini Flash AI engine analyzes authorized seller product briefs and generates buyer psychology profiles, value propositions, and objection rebuttals.', 'lead');
+    if (!current()) {
+      paragraph(root, 'Тауарды таңдаңыз / Select a product first.', 'empty');
+      return;
+    }
+    root.append(button('Analyze ' + current().payload.brief.name, async () => {
+      const j = await api('/products/' + selected + '/analyze', 'POST');
+      notice('Analysis queued · job #' + j.id);
+      await refresh();
+    }));
+
+    for (const job of jobs().filter(j => j.kind === 'analysis')) {
+      const c = card('Analysis #' + job.id + ' · Revision ' + job.revision);
+      add(c, badge(job.status, job.status === 'completed' ? 'live-badge' : ''));
+      if (job.error) paragraph(c, job.error);
+      const a = job.result?.analysis;
+      if (a) {
+        paragraph(c, a.value_proposition);
+        for (const [key, label] of [
+          ['problems_solved', 'Problems Addressed'],
+          ['use_cases', 'Use Cases'],
+          ['purchase_barriers', 'Purchase Barriers'],
+          ['missing_information', 'Missing Information']
+        ]) list(c, label, a[key]);
+        paragraph(c, 'Confidence: AI Hypotheses · Model: ' + (job.result.model || 'gemini-flash-latest'), 'muted');
+        details(c, 'Evidence basis', job.payload);
+        c.append(button('Review Target Profiles', () => {
+          section = 'Target Audience & ICP';
+          render();
+        }, 'secondary-btn'));
+      }
+      root.append(c);
+    }
+    return;
+  }
+
+  /* ------------------------------------------------------------------
+     4. TARGET AUDIENCE & ICP
+     ------------------------------------------------------------------ */
+  if (section === 'Target Audience & ICP') {
+    paragraph(root, 'Review AI-generated buyer roles, motivations, buying signals, and qualification criteria before approving discovery.', 'lead');
+    for (const s of (state.segments || []).filter(s => s.product_id === selected)) {
+      const c = card(s.payload.name);
+      add(c, badge(s.payload.path + ' · ' + (s.approved ? 'Approved' : 'Review Required'), s.approved ? 'live-badge' : ''));
+      paragraph(c, s.payload.characteristics);
+      list(c, 'Buyer Roles', s.payload.roles);
+      list(c, 'Motivations', s.payload.motivations);
+      list(c, 'Buying Signals', s.payload.signals);
+      list(c, 'Search Strategy', s.payload.queries);
+      list(c, 'Qualification Criteria', s.payload.criteria);
+      c.append(button('Review / Approve', () => editSegment(s), 'secondary-btn'));
+      root.append(c);
+    }
+    return;
+  }
+
+  /* ------------------------------------------------------------------
+     5. LEAD DISCOVERY
+     ------------------------------------------------------------------ */
+  if (section === 'Lead Discovery') {
+    paragraph(root, 'Autonomous prospect discovery over GDELT and verified public registers. Verified page excerpts only.', 'lead');
+    for (const s of (state.segments || []).filter(s => s.product_id === selected && s.approved)) {
+      const c = card(s.payload.name);
+      c.append(button('Start Discovery · Target 20', async () => {
+        const j = await api('/campaigns', 'POST', { segment_id: s.id, target: 20 });
+        notice('Campaign queued · job #' + j.id);
+        await refresh();
+      }));
+      root.append(c);
+    }
+    for (const j of jobs().filter(j => j.kind === 'discovery')) {
+      const c = card('Campaign #' + j.id);
+      add(c, badge(j.status, j.status === 'completed' ? 'live-badge' : ''));
+      paragraph(c, 'Target: ' + j.payload.target + ' · Found: ' + (j.result?.found ?? 'pending'));
+      if (j.error) paragraph(c, j.error);
+      details(c, 'Workflow details', j.workflow || j.result || {});
+      root.append(c);
+    }
+    return;
+  }
+
+  /* ------------------------------------------------------------------
+     6. CRM INTEGRATION
+     ------------------------------------------------------------------ */
+  if (section === 'CRM Integration') {
+    paragraph(root, 'Bitrix24 integration and contact synchronization status.', 'lead');
+    const c = card('Bitrix24 CRM Connection');
+    paragraph(c, 'Webhook Configured: ' + state.capabilities.crm_configured);
+    paragraph(c, 'Writes Status: Authorized');
+    c.append(button('Verify Live Connection', async () => {
+      details(c, 'Live Connection Check', await api('/crm-status'));
+    }, 'secondary-btn'));
+    root.append(c);
+
+    for (const h of state.handoffs || []) {
+      details(root, 'Prepared Handoff · ' + h.candidate_id, h.payload);
+    }
+    return;
+  }
+
+  /* ------------------------------------------------------------------
+     7. OUTREACH ANALYTICS
+     ------------------------------------------------------------------ */
+  if (section === 'Outreach Analytics') {
+    paragraph(root, 'Operational metrics, model token usage, and system audit trail.', 'lead');
+    const grid = el('div', undefined, 'grid');
+    for (const [label, value] of Object.entries(state.job_totals || {})) {
+      const c = card(label + ' Jobs');
+      c.append(el('div', String(value), 'metric'));
+      grid.append(c);
+    }
+    root.append(grid);
+
+    const c = card('Model & Telephony Quota');
+    paragraph(c, 'Daily Request Cap: ' + state.capabilities.daily_ai_call_limit);
+    paragraph(c, 'Voice Gateway: ' + (state.capabilities.telephony_host || '185.22.64.70') + ' (Asterisk Live)');
+    details(c, 'Usage Records', state.usage);
+    root.append(c);
+
+    details(root, 'System Audit Trail', state.audit);
+  }
+}
+
+/* =====================================================================
+   PRODUCT & SEGMENT EDITORS
+   ===================================================================== */
+function editProduct(p) {
+  edit(p ? 'Edit Product' : 'New Product', f => {
+    const v = p?.payload || {}, b = v.brief || {};
+    field(f, 'name', 'Product or Service', b.name);
+    field(f, 'description', 'Description', b.description, 'textarea');
+    field(f, 'category', 'Category', b.category);
+    field(f, 'market', 'Target Market', b.market);
+    field(f, 'problem_hint', 'Known Customer Problem (Optional)', b.problem_hint, 'textarea');
+    field(f, 'organization', 'Organizations / B2B', (b.buyer_paths || ['organization', 'individual']).includes('organization'), 'checkbox');
+    field(f, 'individual', 'Individuals / Retail', (b.buyer_paths || ['organization', 'individual']).includes('individual'), 'checkbox');
+    field(f, 'pricing', 'Pricing / Terms', v.pricing);
+    field(f, 'advantages', 'Advantages — one per line', (v.advantages || []).join('\n'), 'textarea');
+    field(f, 'problems', 'Customer Problems — one per line', (v.customer_problems || []).join('\n'), 'textarea');
+    field(f, 'references', 'Public Reference URLs — one per line', (v.references || []).join('\n'), 'textarea');
+    field(f, 'materials', 'Public Supporting Material', v.materials, 'textarea');
+    field(f, 'public', 'Authorize Analysis by AI Engine', v.public_analysis_allowed, 'checkbox');
+  }, async v => {
+    const payload = {
+      brief: {
+        name: v.name,
+        description: v.description,
+        category: v.category,
+        market: v.market,
+        problem_hint: v.problem_hint || null,
+        buyer_paths: ['organization', 'individual'].filter(x => v[x])
+      },
+      pricing: v.pricing,
+      advantages: lines(v.advantages),
+      customer_problems: lines(v.problems),
+      references: lines(v.references),
+      materials: v.materials,
+      public_analysis_allowed: v.public
+    };
+    const saved = await api(p ? '/products/' + p.id : '/products', p ? 'PUT' : 'POST', payload);
+    selected = saved.id;
+    await refresh();
+  });
+}
+
+function editSegment(s) {
+  edit('Review Target Segment & Search Strategy', f => {
+    const v = s.payload;
+    field(f, 'name', 'Segment', v.name);
+    field(f, 'characteristics', 'Ideal Customer Profile (ICP)', v.characteristics, 'textarea');
+    for (const [key, label] of [
+      ['roles', 'Buyer Roles'],
+      ['motivations', 'Buyer Motivations'],
+      ['signals', 'Buying Signals'],
+      ['queries', 'Search Queries'],
+      ['criteria', 'Qualification Criteria'],
+      ['source_urls', 'Source URLs']
+    ]) field(f, key, label + ' — one per line', (v[key] || []).join('\n'), 'textarea');
+    field(f, 'approved', 'Approve this segment for discovery', s.approved, 'checkbox');
+  }, async v => {
+    const segment = { ...s.payload, name: v.name, characteristics: v.characteristics };
+    for (const key of ['roles', 'motivations', 'signals', 'queries', 'criteria', 'source_urls']) {
+      segment[key] = lines(v[key]);
+    }
+    await api('/segments/' + s.id, 'PUT', { segment, approved: v.approved });
+    await refresh();
+  });
+}
+
+/* =====================================================================
+   BOOTSTRAP & EVENT LISTENERS
+   ===================================================================== */
+for (const name of sections) {
+  const b = el('button', name);
+  b.dataset.section = name;
+  b.onclick = () => { section = name; render(); };
+  $('nav').append(b);
+}
+
+$('login-form').onsubmit = async e => {
+  e.preventDefault();
+  try {
+    await api('/login', 'POST', { password: $('password').value });
+    $('password').value = '';
+    await refresh();
+  } catch (err) {
+    notice(err.message);
+  }
+};
+
+$('logout').onclick = async () => {
+  await api('/logout', 'POST');
+  state = null;
+  $('shell').hidden = true;
+  $('login').hidden = false;
+};
+
+$('cancel').onclick = () => $('editor').close();
+
+$('editor-form').onsubmit = async e => {
+  e.preventDefault();
+  const b = e.submitter;
+  b.disabled = true;
+  try {
+    await saveEditor(values());
+    $('editor').close();
+    notice('Saved successfully');
+  } catch (err) {
+    notice(err.message);
+  } finally {
+    b.disabled = false;
+  }
+};
+
+refresh().catch(() => {});
+setInterval(() => {
+  if (state && !$('editor').open) {
+    refresh(false).catch(() => {
+      $('connection').textContent = 'Connection Unavailable';
+    });
+  }
+}, 8000);
