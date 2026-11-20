@@ -17,7 +17,7 @@ from typing import List, Dict, Any, Optional
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 
-VERSION = "1.5.0"
+VERSION = "1.5.3"
 
 DEFAULT_TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -91,7 +91,7 @@ def generate_commercial_offer(
         img_obj = None
         img_path = item.get("image_path")
         if img_path and os.path.exists(img_path):
-            img_obj = InlineImage(tpl, img_path, width=Mm(38))
+            img_obj = InlineImage(tpl, img_path, width=Mm(30))
 
         processed_items.append({
             "name": item.get("name", ""),
