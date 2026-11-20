@@ -10,7 +10,13 @@ venv/
 
 # Environment and secrets
 .env
+.env.*
+!.env.example
 *.local
+*.key
+*.pem
+credentials.json
+service_account.json
 
 # System & IDE
 .DS_Store
@@ -18,11 +24,29 @@ venv/
 .vscode/
 *.swp
 *~
+*.icloud
 
-# Test & Temporary Data Exports
-medical*.csv
-data/medical*.csv
-data/telegram_outreach*.csv
-output/
+# Caches & Test
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 .cache/
 *.tmp
+
+# Generated research, customer contacts, and local runtime state
+outputs/
+output/*.docx
+output/*.pdf
+!templates/*.docx
+*.sqlite*
+*.db
+*.db-*
+*.log
+phone_numbers.txt
+business_club*.txt
+data/commercial_rules/pilots/
+data/sales_team/
+outputs/sales_team/
+terrace-video-test/

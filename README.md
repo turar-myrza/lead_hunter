@@ -1,67 +1,64 @@
-# Lead Hunter Suite
+# Lead Hunter & Universal Sales Intelligence Platform
 
-Multi-source B2B & B2G Lead Generation and Contact Scraping Architecture for Kazakhstan.
+**Lead Hunter** is an autonomous B2B/B2G sales intelligence, outbound calling, and document generation platform for Kazakhstan and international markets.
 
-## Architecture
+* **Production Control Center:** [https://leadhunter.crmconsulting.kz/](https://leadhunter.crmconsulting.kz/)
+* **Version:** `1.6.0`
+
+---
+
+## Architecture Overview
 
 ```
 lead_hunter/
-├── common/                     # Shared utilities across all scrapers
-│   ├── __init__.py
-│   └── utils.py                # Text sanitization, phone normalization, dual CSV export (, and ;)
+├── app/                        # FastAPI Web Platform & Universal Control Center
+│   ├── api/                    # REST APIs (Control Center, Outreach, Deals, Analytics)
+│   ├── core/                   # Application settings, secrets, and environment config
+│   ├── models/                 # Pydantic schemas (Products, ICP Segments, Candidates)
+│   ├── services/               # Workflow orchestration, AI intelligence, and discovery
+│   └── web/                    # Modern Control Center (HTML, CSS, JavaScript)
+│
+├── calling/                    # Bitrix PBX & Asterisk AI Voice Calling Bridge
+│   └── pbx_caller.py           # Outbound caller for Gemini Live 2.0 Voice SDR
+│
+├── documents/                  # Automated Document & Commercial Offer Engine
+│   └── offer_generator.py      # Dynamic DOCX/PDF generator with authentic product photos
+│
+├── integrations/               # External Channels & Messengers
+│   ├── whatsapp_sender.py      # Meta WhatsApp Cloud API with DOCUMENT header templates
+│   └── bitrix24.py             # Bitrix24 REST API client
+│
+├── telegram_scraping/          # Telegram Community Outreach & Scraping
+│   ├── outreach_engine.py      # Personalized inquiry messenger with anti-spam jitter
+│   └── reader.py               # Channel & chat web preview parser
 │
 ├── procurements/               # Tender & Procurement Portals
-│   ├── __init__.py
-│   ├── goszakup/               # Goszakup (goszakup.gov.kz)
-│   │   ├── __init__.py
-│   │   └── scraper.py          # Awards & Contract PDF operational phone parser (v1.2.0)
+│   ├── goszakup/               # Goszakup (goszakup.gov.kz) awarded contract scraper
 │   └── mp_kz/                  # MP.kz / Mitwork commercial electronic trading platform
-│       ├── __init__.py
-│       └── scraper.py          # Platform & company contacts extractor (v1.0.0)
 │
-├── website_scraping/           # Generic Company Website Crawler
-│   ├── __init__.py
-│   └── crawler.py              # Domain contact extractor (homepage, /contacts, /about) (v1.0.0)
+├── templates/                  # Official Word (.docx) letterhead templates
+│   ├── commercial_offer_template.docx      # Russian Commercial Offer template
+│   └── commercial_offer_template_kz.docx   # Kazakh Commercial Offer template
 │
-├── telegram_scraping/          # Telegram Lead Scraper
-│   ├── __init__.py
-│   └── reader.py               # Channel & chat web preview parser (t.me/s/{channel}) (v1.0.0)
-│
-├── data/                       # Unified directory for generated lead datasets
-│   ├── mp_kz_leads.csv
-│   └── mp_kz_leads_semicolon.csv
-│
-├── main.py                     # Unified CLI entrypoint (v1.0.0)
-└── README.md
+└── output/                     # Generated PDFs & outgoing dispatch packages
 ```
 
-## Usage
+---
 
-### 1. MP.kz (Mitwork Procurement)
-Scrapes commercial tenders, organizers, platform hotline (`+7 727 330-99-77`), and direct company profiles:
-```bash
-python3 main.py mp_kz --limit 30 --output data/mp_kz_leads.csv
-```
+## Core Capabilities
 
-### 2. Goszakup (State Procurements)
-Scrapes awarded state tenders and extracts operational mobile numbers from signed contract PDFs:
-```bash
-python3 main.py goszakup --output data/goszakup_leads.csv
-```
-
-### 3. Website Scraping
-Scrapes phone numbers, WhatsApp links, and emails from any company website:
-```bash
-python3 main.py website https://mp.kz https://example.kz --output data/website_leads.csv
-```
-
-### 4. Telegram Scraping
-Scrapes public Telegram channel previews for phone numbers and usernames (without API keys):
-```bash
-python3 main.py telegram kztenders tender_kz --output data/telegram_leads.csv
-```
-
-## CSV Formatting Guarantee
-All scrapers automatically generate **two** sanitized formats to prevent column shifts:
-1. `*.csv`: Comma-separated with all internal text/phone commas sanitized to ` / ` (strictly aligned columns).
-2. `*_semicolon.csv`: Semicolon-separated for direct opening in Windows / CIS Excel.
+1. **Executive Control Center (`/platform`)**:
+   - Universal product brief and value proposition manager.
+   - Structured ICP audience generation via Gemini Flash.
+   - Live outbound AI voice calling launcher (Asterisk PBX).
+   - WhatsApp 2-page PDF commercial offer dispatch via approved Meta templates.
+2. **AI Voice Calling (Asterisk + Gemini Live 2.0)**:
+   - Real B2B sales manager techniques in **Kazakh** and **Russian**.
+   - Contextual openings and objection handlers (*«Жеткізушіміз бар»*, *«Поштаға жіберіңіз»*, *«Қанша тұрады?»*).
+   - Strict 2-way phone selection (current number vs. dictated number) and automatic hangup upon agreement.
+3. **Automated Commercial Offer Generation**:
+   - High-fidelity 2-page PDF generation from `.docx` templates using `docxtpl` and headless LibreOffice.
+   - Authentic scraped manufacturer photos, exact 180mm table borders, and official director signature.
+4. **Meta WhatsApp Cloud API Delivery**:
+   - Approved template `commercial_offer_pdf_doc` (WABA `891036053865144`) with native `DOCUMENT` header.
+   - Bypasses the 24-hour delivery barrier to deliver official PDF proposals directly to client chats.

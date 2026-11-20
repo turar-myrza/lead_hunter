@@ -1,0 +1,26 @@
+{
+  "mode": "fixture",
+  "brief": {
+    "name": "Cake trays",
+    "description": "Rigid food-contact cake trays help bakeries keep decorated cakes stable during packing and transport.",
+    "category": "Food packaging",
+    "market": "Kazakhstan",
+    "buyer_paths": ["organization"]
+  },
+  "owner": "Packaging opportunity review",
+  "supplied_candidates": [{
+    "id": "demo-bakery",
+    "label": "Example Bakery",
+    "path": "organization",
+    "evidence": [
+      {"id": "identity", "kind": "identity", "excerpt": "Example Bakery produces made-to-order celebration cakes.", "url": "https://example.org/bakery"},
+      {"id": "tray-requirements", "kind": "need", "excerpt": "Supplier brief requests 28 cm rigid trays with a food-contact declaration.", "url": "https://example.org/bakery/suppliers"},
+      {"id": "purchase-roles", "kind": "role", "excerpt": "The Packaging Lead tests fit, the Procurement Manager requests samples, and the Operations Director signs off supplier purchases.", "url": "https://example.org/bakery/suppliers"}
+    ],
+    "roles": [
+      {"role": "technical_specialist", "actor": "Packaging Lead", "evidence_ids": ["purchase-roles"]},
+      {"role": "procurement", "actor": "Procurement Manager", "evidence_ids": ["purchase-roles"]},
+      {"role": "decision_maker", "actor": "Operations Director", "evidence_ids": ["purchase-roles"]}
+    ]
+  }]
+}

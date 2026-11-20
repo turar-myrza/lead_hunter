@@ -1,0 +1,28 @@
+{
+  "mode": "fixture",
+  "brief": {
+    "name": "Decompression belt",
+    "description": "A support belt with a size guide and product instructions for customers reviewing fit and intended use.",
+    "category": "Consumer support products",
+    "problem_hint": "The shopper needs to determine whether the product can be fitted and used as instructed before making a purchase.",
+    "market": "Kazakhstan",
+    "buyer_paths": ["individual"]
+  },
+  "owner": "Inbound product support",
+  "supplied_candidates": [{
+    "id": "demo-inquiry",
+    "label": "Synthetic family inquiry",
+    "path": "individual",
+    "evidence": [
+      {"id": "sizing", "kind": "need", "excerpt": "The shopper requests a size chart and the manufacturer’s instructions before deciding."},
+      {"id": "family-roles", "kind": "role", "excerpt": "The wearer chooses the size, and the family purchaser pays after the wearer confirms the choice."},
+      {"id": "received", "kind": "inbound_request", "excerpt": "Please reply with the size guide to this inquiry.", "channel": "email", "observed_at": "2026-11-18T10:00:00+05:00"},
+      {"id": "permission", "kind": "opt_in", "excerpt": "The shopper asked for an email reply about this request only.", "channel": "email", "observed_at": "2026-11-18T10:00:00+05:00"}
+    ],
+    "roles": [
+      {"role": "user", "actor": "wearer", "evidence_ids": ["family-roles"]},
+      {"role": "decision_maker", "actor": "wearer", "evidence_ids": ["family-roles"]},
+      {"role": "payer", "actor": "family purchaser", "evidence_ids": ["family-roles"]}
+    ]
+  }]
+}
