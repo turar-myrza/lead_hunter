@@ -25,7 +25,83 @@ from integrations.whatsapp_sender import (
     send_whatsapp_template_with_document
 )
 
-VERSION = "1.5.4"
+VERSION = "1.5.5"
+
+
+def run_demo_centrifuges_offer(client_company: str = "ТОО «CRM Consulting»", client_name: str = "Турар", send_wa_phone: str = None):
+    """Generate sample commercial offer with real laboratory centrifuges in Kazakhstan."""
+    assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "centrifuges")
+
+    items = [
+        {
+            "name": "DLAB DM0412",
+            "description": "Клиническая центрифуга низкоскоростная. Скорость: 300–4500 об/мин (RCF 2490×g). Угловой ротор: 8×15 мл или 12×10 мл / 7 мл / 5 мл (вакутейнеры). Бесщеточный двигатель, LCD-дисплей, электрический замок крышки.",
+            "unit": "шт",
+            "price": "385 000",
+            "image_path": os.path.join(assets_dir, "dlab_dm0412.jpg"),
+        },
+        {
+            "name": "Biosan LMC-3000",
+            "description": "Лабораторная настольная центрифуга. Скорость: 100–3000 об/мин (RCF 1610×g). Универсальный бакет-ротор под пробирки до 50 мл и микропланшеты. Микропроцессорный контроль, цифровая индикация.",
+            "unit": "шт",
+            "price": "890 000",
+            "image_path": os.path.join(assets_dir, "biosan_lmc3000.png"),
+        },
+        {
+            "name": "DLAB D2012 Plus",
+            "description": "Высокоскоростная микроцентрифуга для ПЦР и молекулярной биологии. Скорость: 15 000 об/мин (RCF 15 100×g). Вместимость ротора: 12×1.5/2.0 мл. Импульсный режим (Pulse), защита от превышения скорости.",
+            "unit": "шт",
+            "price": "560 000",
+            "image_path": os.path.join(assets_dir, "dlab_d2012plus.jpg"),
+        },
+        {
+            "name": "Armed 80-2S",
+            "description": "Медицинская центрифуга периодического действия для рутинной диагностики. Скорость: до 4000 об/мин (RCF 2130×g). Вместимость: 12 пробирок по 20 мл. Механический таймер до 30 мин, блокировка крышки.",
+            "unit": "шт",
+            "price": "185 000",
+            "image_path": os.path.join(assets_dir, "armed_80_2s.jpg"),
+        },
+        {
+            "name": "Eppendorf 5424 R",
+            "description": "Премиальная рефрижераторная микроцентрифуга с охлаждением (-10°C до +40°C). Скорость: до 15 000 об/мин (RCF 21 130×g). Вместимость: 24×1.5/2.0 мл. Бесшумная работа (OptiBowl), режим быстрого охлаждения FastTemp.",
+            "unit": "шт",
+            "price": "4 750 000",
+            "image_path": os.path.join(assets_dir, "eppendorf_5424r.jpg"),
+        },
+    ]
+
+    intro = (
+        "Компания «Аврора-2014» рада приветствовать Вас и предлагает свои услуги по поставке "
+        "медицинского и лабораторного оборудования ведущих мировых производителей (DLAB, Biosan, Eppendorf, Armed). "
+        "Мы уверены, что наше предложение сможет удовлетворить Ваши потребности и стать основой для взаимовыгодного "
+        "сотрудничества. Мы готовы обеспечить поставку сертифицированного оборудования с гарантией 12 месяцев, "
+        "пусконаладкой и доставкой DDP до Вашей лаборатории, а также предлагаем гибкие условия оплаты."
+    )
+
+    print(f"Generating Laboratory Centrifuges Commercial Offer PDF for {client_company} ({client_name})...")
+    res = generate_commercial_offer(
+        client_company=client_company,
+        client_name=client_name,
+        items=items,
+        intro_text=intro,
+        output_docx_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "KP_Лабораторные_центрифуги_ТОО_CRM_Consulting.docx"),
+        output_pdf_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "KP_Лабораторные_центрифуги_ТОО_CRM_Consulting.pdf"),
+    )
+    print(f"Generated DOCX: {res['docx']}")
+    print(f"Generated PDF:  {res['pdf']}")
+
+    if send_wa_phone:
+        print(f"Sending WhatsApp Inquiry to {send_wa_phone}...")
+        try:
+            doc_res = send_whatsapp_document(
+                to_phone=send_wa_phone,
+                pdf_path=res["pdf"],
+                caption="Коммерческое предложение: Лабораторные центрифуги (ТОО АВРОРА-2014)",
+                filename="КП_Лабораторные_центрифуги.pdf"
+            )
+            print(f"Direct WhatsApp Document result: {doc_res}")
+        except Exception as e:
+            print(f"Direct WhatsApp Document dispatch failed: {e}")
 
 
 def run_demo_tires_offer(client_company: str = "ТОО «ТАЙЫРОВ»", client_name: str = "Даурен", send_wa_phone: str = None):
@@ -163,9 +239,11 @@ def main():
 
     # 7. Document Generator (КП) & WhatsApp Dispatch
     offer_parser = subparsers.add_parser("offer", help="Generate Commercial Offer (.docx -> .pdf) and send via WhatsApp")
-    offer_parser.add_argument("--company", default="ТОО «ТАЙЫРОВ»", help="Customer company name")
-    offer_parser.add_argument("--ceo", default="Даурен", help="Customer CEO / contact person")
-    offer_parser.add_argument("--demo-tires", action="store_true", default=True, help="Use vehicle tires demonstration dataset")
+    offer_parser.add_argument("--company", default="ТОО «CRM Consulting»", help="Customer company name")
+    offer_parser.add_argument("--ceo", default="Турар", help="Customer CEO / contact person")
+    offer_parser.add_argument("--product", default="centrifuges", choices=["centrifuges", "tires"], help="Product catalog: centrifuges or tires")
+    offer_parser.add_argument("--demo-centrifuges", action="store_true", default=False, help="Use laboratory centrifuges dataset")
+    offer_parser.add_argument("--demo-tires", action="store_true", default=False, help="Use vehicle tires demonstration dataset")
     offer_parser.add_argument("--send-wa", default=None, help="Phone number to send generated PDF via WhatsApp Cloud API")
 
     args = parser.parse_args()
@@ -215,8 +293,14 @@ def main():
 
     elif args.command == "offer":
         print(f"=== Running Commercial Offer Generator (Lead Hunter v{VERSION}) ===")
-        if args.demo_tires:
+        if args.demo_tires or args.product == "tires":
             run_demo_tires_offer(
+                client_company=args.company,
+                client_name=args.ceo,
+                send_wa_phone=args.send_wa,
+            )
+        else:
+            run_demo_centrifuges_offer(
                 client_company=args.company,
                 client_name=args.ceo,
                 send_wa_phone=args.send_wa,
