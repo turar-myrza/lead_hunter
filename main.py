@@ -19,9 +19,13 @@ from telegram_scraping.reader import TelegramLeadReader
 from telegram_scraping.outreach_engine import run_telegram_outreach
 from calling.pbx_caller import call_lead
 from documents.offer_generator import generate_commercial_offer
-from integrations.whatsapp_sender import send_whatsapp_document
+from integrations.whatsapp_sender import (
+    send_whatsapp_document,
+    send_whatsapp_template,
+    send_whatsapp_template_with_document
+)
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 
 def run_demo_tires_offer(client_company: str = "ТОО «ТАЙЫРОВ»", client_name: str = "Даурен", send_wa_phone: str = None):
@@ -76,15 +80,40 @@ def run_demo_tires_offer(client_company: str = "ТОО «ТАЙЫРОВ»", clie
     print(f"Generated PDF:  {res['pdf']}")
 
     if send_wa_phone:
-        print(f"Sending PDF via WhatsApp to {send_wa_phone}...")
-        caption = f"Здравствуйте, {client_name}! Направляем коммерческое предложение по автомобильным шинам (Cordiant, Viatti, Triangle) от ТОО «АВРОРА-2014»."
-        wa_res = send_whatsapp_document(
-            to_phone=send_wa_phone,
-            pdf_path=res["pdf"],
-            caption=caption,
-            filename="КП_Шины_АВРОРА_2014.pdf",
-        )
-        print(f"WhatsApp Dispatch Result: {wa_res}")
+        print(f"Sending WhatsApp Inquiry Template to {send_wa_phone}...")
+        try:
+            # 1. Send approved WhatsApp Template to initiate dialogue outside 24h window
+            tpl_res = send_whatsapp_template(
+                to_phone=send_wa_phone,
+                template_name="send_catalog_via_url_qaz",
+                language_code="kk",
+                components=[
+                    {
+                        "type": "button",
+                        "sub_type": "url",
+                        "index": "0",
+                        "parameters": [
+                            {"type": "text", "text": "https://crmconsulting.bitrix24.kz/"}
+                        ]
+                    }
+                ]
+            )
+            print(f"✅ WhatsApp Marketing Template Accepted: {tpl_res}")
+        except Exception as e:
+            print(f"⚠️ Template dispatch warning: {e}")
+
+        print(f"Sending Commercial Offer PDF to {send_wa_phone}...")
+        caption = f"Здравствуйте, {client_name}! Направляем официальное коммерческое предложение по автомобильным шинам (Cordiant, Viatti, Triangle) от ТОО «АВРОРА-2014» с фотографиями всех моделей и ценами."
+        try:
+            wa_res = send_whatsapp_document(
+                to_phone=send_wa_phone,
+                pdf_path=res["pdf"],
+                caption=caption,
+                filename="КП_Шины_АВРОРА_2014.pdf",
+            )
+            print(f"✅ WhatsApp Document Dispatch Result: {wa_res}")
+        except Exception as e:
+            print(f"⚠️ Document dispatch notice: {e}")
 
     return res
 
