@@ -348,7 +348,7 @@ FastAPI endpoints. Both use the same persisted workflow for organization and
 individual buyer paths. See the [universal LeadHunter runbook](docs/universal_lead_hunter.md)
 for fixture commands, source coverage, API configuration, and extension points.
 
-Product release: **1.2.4**. See [publishing policy](docs/versioning.md).
+Product release: **1.2.5**. See [publishing policy](docs/versioning.md).
 
 ## Platform scope and implementation status
 

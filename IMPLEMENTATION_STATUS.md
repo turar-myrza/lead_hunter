@@ -178,3 +178,11 @@ See `docs/control_center.md` for actual commands, guards and current limitations
 - Validation: local and VPS full pytest suites each 446 passed, one dependency
   deprecation warning; `node --check app/web/control.js` and `git diff --check`
   passed. Python 3.11 TLS mock compatibility fixed without changing runtime TLS.
+
+### Reload fix — v1.2.5
+
+Final full browser reload exposed the legacy host's `/favicon.ico` response with
+`Clear-Site-Data: "cache", "cookies", "storage"`. The control center now declares
+an inline favicon so its page does not request that legacy path. Existing host
+routes are unchanged. Visiting other legacy pages on the same hostname may still
+clear this session; keep the control center at `/platform`.
