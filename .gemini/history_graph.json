@@ -26,5 +26,12 @@
     "result_summary": "1) Solved Meta Cloud API 24-hour service window block by introducing approved WhatsApp marketing templates (send_catalog_via_url_qaz & qaz_marketing) and designed the full commercial_offer_inquiry marketing template with DOCUMENT header for Meta approval; 2) Updated bitrix_pbx ai_gateway (v3.3.22) with send_commercial_offer_whatsapp tool and strict 2-way prompt rules (Option 1: current phone, Option 2: client dictates other number) saving target phone into offer_request JSON, deployed to production VPS (185.22.64.70); 3) Upgraded lead_hunter (v1.5.1) with send_whatsapp_template_with_document, verified crisp 400x400 product photos inside PDF table, and successfully sent accepted marketing template (wamid: C5F0B04D64B1269820) and PDF document to Dauren (+77017211156).",
     "parent": "node-1.5.0-dynamic-commercial-offer-pdf-and-whatsapp",
     "timestamp": "2026-11-20T11:58:45+05:00"
+  },
+  {
+    "id": "node-1.5.3-fixed-layout-real-photos-and-confirmed-dispatch",
+    "prompt_summary": "Fix premature WhatsApp dispatch (only send upon verbal confirmation during call on current vs dictated number), fix table margin overflow and vertical director text wrapping in PDF, embed real scraped tire photos from web",
+    "result_summary": "1) Corrected dispatch sequence: commercial offer is never sent beforehand. In-call Gemini agent pitches tires and asks whether to send to current number or a dictated number. Fixed bitrix_ai_gateway (v3.3.24) and prompt_library (v3.3.23) where read_only was blocking send_commercial_offer_whatsapp execution, deployed to VPS; 2) Fixed PDF layout in templates/commercial_offer_template.docx: adjusted table column widths to exactly 180mm with 15mm page margins, removed broken XML right-indent that squeezed signature into vertical single characters, and compacted images to 30mm so all 5 tires and director signature fit cleanly across 2 pages without overflow; 3) Scraped and embedded authentic high-res studio photos directly from Viatti, Triangle, and Cordiant official distributor catalogs into assets/tires/.",
+    "parent": "node-1.5.1-whatsapp-2-way-dialogue-and-marketing-template",
+    "timestamp": "2026-11-20T14:34:30+05:00"
   }
 ]
