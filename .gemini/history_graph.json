@@ -12,5 +12,12 @@
     "result_summary": "Connected to chief's branch codex/ainur-multiprompt-interface in bitrix_pbx (v3.3.21). Resolved root causes: fixed hardcoded WhatsApp greetings, enhanced prompt_library.py to dynamically resolve single/multi-product pitches, updated get_call_lead_metadata to preserve product fields, and deployed to production VPS (185.22.64.70). Created calling/pbx_caller.py bridge in lead_hunter (v1.4.0) with 'call' CLI command. Successfully placed live test call to Dauren (+77017211156) pitching disposable blades for surgical scalpels with live voice greeting delivered.",
     "parent": "node-1.3.0-telegram-outreach-engine",
     "timestamp": "2026-11-19T17:11:15+05:00"
+  },
+  {
+    "id": "node-1.5.0-dynamic-commercial-offer-pdf-and-whatsapp",
+    "prompt_summary": "Find free open-source self-hosted engine to generate PDF from docx template with dynamic tables (1 to 1000 items), customer info, prices, photos; test with vehicle tires in Kazakhstan; call +77017211156 and send PDF via WhatsApp using Meta Graph API",
+    "result_summary": "Identified docxtpl (python-docx-template) + headless LibreOffice as the optimal FOSS engine. Adapted customer's docx template (ТОО «АВРОРА-2014», Aktobe) with Jinja2 table looping ({%tr for item in items %}) and InlineImage support. Built real Kazakhstan vehicle tires dataset (Cordiant, Viatti, Triangle) with specs, prices in KZT, and photos. Implemented documents/offer_generator.py (v1.5.0) and integrations/whatsapp_sender.py (v1.5.0). Generated PDF, uploaded to Meta WhatsApp Cloud API (media id: 2362664477861843), and successfully sent to Dauren (+77017211156, message id: wamid.HBgLNzcwMTcyMTExNTYVAgARGBIwMEFFMjE5QUQ4MEY4RjlDMjMA). Dispatched AI voice call pitching vehicle tires via Bitrix PBX bridge.",
+    "parent": "node-1.4.0-bitrix-pbx-product-caller-bridge",
+    "timestamp": "2026-11-20T11:39:30+05:00"
   }
 ]
