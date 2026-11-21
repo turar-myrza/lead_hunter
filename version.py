@@ -1,3 +1,3 @@
 """Lead Hunter product version."""
 
-VERSION = "1.5.12"
+VERSION = "1.5.13"

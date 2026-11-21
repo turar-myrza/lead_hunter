@@ -252,3 +252,9 @@ clear this session; keep the control center at `/platform`.
   pages and still depends on a successful public fetch and evidence verification.
 - Live enablement has not been performed: it may consume Gemini search-grounding
   quota and must be explicitly approved before a live market run.
+
+## External-action safety gate — v1.5.13
+
+- `CONTROL_EXTERNAL_ACTIONS_ENABLED=false` is the default for any later adapter
+  that supports calls or messages. Research, review and CRM READ ONLY are not
+  authorization for outreach.
