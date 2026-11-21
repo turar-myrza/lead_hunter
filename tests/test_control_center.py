@@ -99,6 +99,41 @@ async def test_ai_usage_and_budget(svc):
     assert svc.store.snapshot()['usage'][0]['input_tokens']==10
     with pytest.raises(IntelligenceError,match='daily'):await ai.generate('product_analysis',{},ProductIntelligence)
 
+
+async def test_grounded_public_web_only_returns_cited_safe_public_pages(svc):
+    settings=svc.settings.model_copy(update={
+        'control_ai_enabled':True,
+        'control_gemini_key':__import__('pydantic').SecretStr('mock-key'),
+        'control_ai_web_research_enabled':True,
+        'control_ai_web_research_max_sources':8,
+    })
+    def respond(request):
+        body=json.loads(request.content)
+        assert body['tools']==[{'google_search':{}}]
+        assert 'CRM history' not in body['contents'][0]['parts'][0]['text']
+        return httpx.Response(200,json={'candidates':[{'groundingMetadata':{'groundingChunks':[
+            {'web':{'uri':'https://company.kz/news/growth','title':'Company growth'}},
+            {'web':{'uri':'https://t.me/s/public_company','title':'Public channel'}},
+            {'web':{'uri':'https://t.me/private_group','title':'Not a public channel view'}},
+            {'web':{'uri':'https://company.kz/news/growth','title':'Duplicate'}},
+        ]}}],'usageMetadata':{'promptTokenCount':5,'candidatesTokenCount':6}})
+    ai=ProductAI(settings,svc.store,httpx.MockTransport(respond))
+    sources=await ai.search_public_web(query='Find public companies with B2B sales growth in Shymkent.',context={'market':'Shymkent'})
+    assert [item['url'] for item in sources]==['https://company.kz/news/growth','https://t.me/s/public_company']
+    assert svc.store.snapshot()['usage'][0]['operation']=='public_web_research'
+
+
+def test_strategy_enables_grounded_research_only_when_configured(svc):
+    crm=ProductProfile(brief=ProductBrief(name='CRM implementation',description='Bitrix24 sales automation',category='CRM services',market='Шымкент',buyer_paths={'organization'}),public_analysis_allowed=True)
+    segment=Segment(name='B2B sales companies',path='organization',characteristics='Growing B2B firms',roles=['Owner'],motivations=['Control sales'],signals=['Sales hiring'],queries=['seller query'],criteria=['Multiple salespeople'])
+    assert svc._discovery_strategy(crm,segment)['source_ids']==['shymkent_crm']
+    svc.settings=svc.settings.model_copy(update={
+        'control_ai_web_research_enabled':True,
+        'control_ai_enabled':True,
+        'control_gemini_key':__import__('pydantic').SecretStr('mock-key'),
+    })
+    assert svc._discovery_strategy(crm,segment)['source_ids']==['shymkent_crm','grounded_public_web']
+
 async def test_product_source_requires_exact_quotes_and_location(svc):
     from app.models.control_center import Extraction
     text='<h1>Example Bakery</h1><p>Example Bakery in Warsaw makes custom cakes.</p><p>Procurement lead Anna chooses packaging.</p>'+'<p>We prepare celebration cakes for transport and delivery.</p>'

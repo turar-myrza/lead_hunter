@@ -151,3 +151,22 @@ The UI shows the human-readable method and any temporarily unavailable public
 source after a run. Zero candidates means no evidence-backed organizations were
 retained; it never means that companies were invented. Messaging, calls and
 production CRM writes remain outside this workflow.
+
+## Public web research test mode
+
+The normal operator flow remains **product → approve audience → find companies**.
+The operator does not configure queries, URLs, Telegram channels, or adapters.
+
+When `CONTROL_AI_WEB_RESEARCH_ENABLED=true` is explicitly enabled alongside the
+already configured public-material Gemini analysis, the application adds the
+`grounded_public_web` adapter to an organizational run. It asks the configured
+provider to discover cited public web pages only. Those citations are discovery
+hints, not evidence: the application fetches each page again through
+`PublicFetcher`, honoring robots.txt, request limits, blocks and CAPTCHA
+responses, then extracts evidence from the page itself.
+
+Public Telegram is limited to cited `https://t.me/s/<public-channel>` pages.
+Private groups, invite links, account pages, login-only content, retained
+sessions and access-control workarounds are excluded. No CRM data is sent to
+the provider. This mode still prepares review-only opportunities: it cannot
+create Bitrix24 records, send messages, or place calls.

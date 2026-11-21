@@ -8,6 +8,7 @@ from app.services.sales_store import now
 from app.services.universal_lead_hunter import LeadHunterApplication
 from app.services.universal_sources import ADAPTERS
 from app.services.product_discovery import ProductDiscovery
+from app.services.grounded_public_discovery import GroundedPublicDiscovery
 from app.integrations.product_intelligence import ProductAI,IntelligenceError
 
 class ControlCenter:
@@ -57,34 +58,37 @@ class ControlCenter:
             'strategy': strategy,
         })
 
-    @staticmethod
-    def _discovery_strategy(profile, segment):
+    def _discovery_strategy(self, profile, segment):
         """Choose sources inside the application; operators approve an audience, not adapters."""
         material = ' '.join((profile.brief.name, profile.brief.description, profile.brief.category)).casefold()
         market = profile.brief.market.casefold()
         crm_product = any(word in material for word in ('crm', 'битрикс', 'автоматизац', 'мойсклад'))
+        web_research_ready=bool(self.settings.control_ai_web_research_enabled and self.settings.control_ai_enabled and self.settings.control_gemini_key)
+        public_web=['grounded_public_web'] if web_research_ready else []
+        web_note=(' Public web research is enabled.' if public_web
+                  else ' Broader public web research is prepared but not yet enabled.')
         if segment.path == 'organization' and crm_product and market in {'шымкент', 'shymkent'}:
             return {
                 'label': 'Публичные коммерческие сигналы Шымкента',
-                'source_ids': ['shymkent_crm'],
+                'source_ids': ['shymkent_crm', *public_web],
                 'research_context': 'crm_sales_operations',
                 'crm_read_only': True,
-                'reason': 'Региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24.',
+                'reason': 'Региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24.'+web_note,
             }
         if segment.path == 'organization' and crm_product and market in {'казахстан', 'kazakhstan'}:
             return {
                 'label': 'Публичные коммерческие сигналы Казахстана',
-                'source_ids': ['kazakhstan_sales'],
+                'source_ids': ['kazakhstan_sales', *public_web],
                 'research_context': 'crm_sales_operations',
                 'crm_read_only': True,
-                'reason': 'Региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24.',
+                'reason': 'Региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24.'+web_note,
             }
         return {
             'label': 'Публичные источники по одобренной аудитории',
-            'source_ids': ['product_public'],
+            'source_ids': ['product_public', *public_web],
             'research_context': 'general',
             'crm_read_only': True,
-            'reason': 'Публичные страницы и публикации с проверяемыми цитатами.',
+            'reason': 'Публичные страницы и публикации с проверяемыми цитатами.'+web_note,
         }
 
     def review(self, job_id, candidate_id, review):
@@ -166,14 +170,16 @@ class ControlCenter:
                 def log(action, detail):self.store.audit(action,json.dumps({'job_id':job['id'],**detail},ensure_ascii=False))
                 factory=lambda: ProductDiscovery(self.ai,log)
                 factory.capability=ProductDiscovery.capability
-                app=LeadHunterApplication(self.store.base,self.settings.lead_hunter_output,adapters=(*ADAPTERS,factory))
+                grounded_factory=lambda: GroundedPublicDiscovery(self.ai,seg,log)
+                grounded_factory.capability=GroundedPublicDiscovery.capability
+                app=LeadHunterApplication(self.store.base,self.settings.lead_hunter_output,adapters=(*ADAPTERS,factory,grounded_factory))
                 brief=product.brief.model_copy(update={'buyer_paths':{seg.path}})
                 request=RunRequest(brief=brief, source_ids=strategy['source_ids'],
                     research_context=strategy['research_context'], crm_read_only=strategy['crm_read_only'],
                     limit=job['payload']['target'],
                     # Seller references describe our product. They are never treated as buyer sources.
-                    discovery_queries=seg.queries if strategy['source_ids']==['product_public'] else [],
-                    discovery_urls=seg.source_urls if strategy['source_ids']==['product_public'] else [],
+                    discovery_queries=seg.queries if 'product_public' in strategy['source_ids'] else [],
+                    discovery_urls=seg.source_urls if 'product_public' in strategy['source_ids'] else [],
                     owner='CEO review queue')
                 run_id=app.submit(request)
                 with self.store.base.connect() as db:db.execute('UPDATE cc_job SET result=? WHERE id=?',(json.dumps({'run_id':run_id}),job['id']))

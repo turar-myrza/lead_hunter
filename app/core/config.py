@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     control_ai_model: str = Field(default='gemini-3.8-flash', pattern=r'^[a-zA-Z0-9.-]{1,100}$')
     control_ai_proxy: Optional[str] = None
     control_ai_daily_calls: int = Field(default=30, ge=1, le=100)
+    # Google Search grounding is a separate external capability. It is off until
+    # the CEO explicitly enables it for public, no-CRM research only.
+    control_ai_web_research_enabled: bool = False
+    control_ai_web_research_max_sources: int = Field(default=16, ge=4, le=30)
+    # Separate explicit gate for a future, approved outreach phase.
+    control_external_actions_enabled: bool = False
     control_secure_cookie: bool = True
     control_knowledge_path: Optional[str] = None
 

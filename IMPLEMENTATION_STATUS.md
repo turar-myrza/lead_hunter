@@ -239,3 +239,16 @@ clear this session; keep the control center at `/platform`.
 - Results expose the chosen human-readable method and temporary source failures.
   No operator must interpret adapters or compose source queries. No messages,
   calls or CRM writes are introduced by this change.
+# Public-web research preparation — v1.5.12
+
+- Added an optional, disabled-by-default `grounded_public_web` discovery adapter.
+  It uses the already configured Gemini provider only for public source discovery
+  and retains URLs solely from provider citations. Each candidate page is then
+  independently fetched and verified by the existing bounded public-page path.
+- The test-mode boundary is explicit: `CONTROL_AI_WEB_RESEARCH_ENABLED=false`
+  by default; no CRM history is included in the external request; CRM remains
+  read-only; messages, calls and CRM writes remain unavailable.
+- Public Telegram support is deliberately limited to cited `t.me/s/<channel>`
+  pages and still depends on a successful public fetch and evidence verification.
+- Live enablement has not been performed: it may consume Gemini search-grounding
+  quota and must be explicitly approved before a live market run.
