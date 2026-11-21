@@ -1,0 +1,7 @@
+#!/bin/sh
+# Push the branch that was just committed. Set GIT_AUTO_PUSH=0 to opt out once.
+if [ "${GIT_AUTO_PUSH:-1}" = "0" ]; then
+  exit 0
+fi
+
+git push origin HEAD
