@@ -136,3 +136,18 @@ The existing main source engines remain CLI components. They are not silently
 advertised as new authenticated UI discovery adapters. Product-derived discovery
 still requires CEO audience approval. Broader adapter wiring is a subsequent
 integration task, not claimed complete by this deployment.
+
+## Simple discovery flow (v1.5.9)
+
+The operator does not select GDELT, RSS, search phrases, or source URLs. The
+only business decisions are the product profile, market and approval of the
+generated target audience. After approval, **Find up to 20 companies** chooses
+the source strategy itself. For CRM/Bitrix24/automation services in Shymkent it
+uses the existing `shymkent_crm` adapter with the `crm_sales_operations` profile
+and requests a Bitrix24 READ ONLY check. Seller reference URLs, such as the
+CRM Consulting site, are never treated as buyer sources.
+
+The UI shows the human-readable method and any temporarily unavailable public
+source after a run. Zero candidates means no evidence-backed organizations were
+retained; it never means that companies were invented. Messaging, calls and
+production CRM writes remain outside this workflow.

@@ -48,7 +48,44 @@ class ControlCenter:
         if not profile.public_analysis_allowed:raise ValueError('public_material_approval_required')
         # Individual discovery is permissioned inbound only, never web scraping of people.
         if segment['payload']['path']=='individual':raise ValueError('individual_inbound_adapter_required')
-        return self.store.enqueue('discovery',product,{'segment_id':segment_id,'segment':segment['payload'],'target':target,'product':product['payload']})
+        strategy = self._discovery_strategy(profile, Segment.model_validate(segment['payload']))
+        return self.store.enqueue('discovery', product, {
+            'segment_id': segment_id,
+            'segment': segment['payload'],
+            'target': target,
+            'product': product['payload'],
+            'strategy': strategy,
+        })
+
+    @staticmethod
+    def _discovery_strategy(profile, segment):
+        """Choose sources inside the application; operators approve an audience, not adapters."""
+        material = ' '.join((profile.brief.name, profile.brief.description, profile.brief.category)).casefold()
+        market = profile.brief.market.casefold()
+        crm_product = any(word in material for word in ('crm', 'битрикс', 'автоматизац', 'мойсклад'))
+        if segment.path == 'organization' and crm_product and market in {'шымкент', 'shymkent'}:
+            return {
+                'label': 'Публичные коммерческие сигналы Шымкента',
+                'source_ids': ['shymkent_crm'],
+                'research_context': 'crm_sales_operations',
+                'crm_read_only': True,
+                'reason': 'Региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24.',
+            }
+        if segment.path == 'organization' and crm_product and market in {'казахстан', 'kazakhstan'}:
+            return {
+                'label': 'Публичные коммерческие сигналы Казахстана',
+                'source_ids': ['kazakhstan_sales'],
+                'research_context': 'crm_sales_operations',
+                'crm_read_only': True,
+                'reason': 'Региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24.',
+            }
+        return {
+            'label': 'Публичные источники по одобренной аудитории',
+            'source_ids': ['product_public'],
+            'research_context': 'general',
+            'crm_read_only': True,
+            'reason': 'Публичные страницы и публикации с проверяемыми цитатами.',
+        }
 
     def review(self, job_id, candidate_id, review):
         job=self.store.job(job_id)
@@ -125,13 +162,19 @@ class ControlCenter:
                     'confidence':'unverified_hypotheses','model':self.settings.control_ai_model})
             else:
                 product=ProductProfile.model_validate(job['payload']['product']);seg=Segment.model_validate(job['payload']['segment'])
+                strategy=job['payload'].get('strategy') or self._discovery_strategy(product,seg)
                 def log(action, detail):self.store.audit(action,json.dumps({'job_id':job['id'],**detail},ensure_ascii=False))
                 factory=lambda: ProductDiscovery(self.ai,log)
                 factory.capability=ProductDiscovery.capability
                 app=LeadHunterApplication(self.store.base,self.settings.lead_hunter_output,adapters=(*ADAPTERS,factory))
                 brief=product.brief.model_copy(update={'buyer_paths':{seg.path}})
-                request=RunRequest(brief=brief,source_ids=['product_public'],limit=job['payload']['target'],
-                    discovery_queries=seg.queries,discovery_urls=seg.source_urls,owner='CEO review queue')
+                request=RunRequest(brief=brief, source_ids=strategy['source_ids'],
+                    research_context=strategy['research_context'], crm_read_only=strategy['crm_read_only'],
+                    limit=job['payload']['target'],
+                    # Seller references describe our product. They are never treated as buyer sources.
+                    discovery_queries=seg.queries if strategy['source_ids']==['product_public'] else [],
+                    discovery_urls=seg.source_urls if strategy['source_ids']==['product_public'] else [],
+                    owner='CEO review queue')
                 run_id=app.submit(request)
                 with self.store.base.connect() as db:db.execute('UPDATE cc_job SET result=? WHERE id=?',(json.dumps({'run_id':run_id}),job['id']))
                 await app.process(run_id)
@@ -144,8 +187,12 @@ class ControlCenter:
                     crm={p.candidate.id:checks.get(p.candidate.label,{'state':'unavailable'}) for p in result.opportunities}
                 count=len(result.opportunities) if result else 0
                 status='completed' if result and app.status(run_id).status=='completed' and count>=request.limit else 'partial'
+                workflow=app.status(run_id)
+                source_errors=[item.model_dump(mode='json') for item in workflow.stages[2].errors] if workflow else []
                 self.store.finish(job['id'],status,{'run_id':run_id,'target':request.limit,'found':count,'crm':crm,
-                    'shortfall':max(0,request.limit-count),'contacts_verified':0,'note':'Evidence-backed candidates require manager qualification; no messages or CRM writes.'})
+                    'shortfall':max(0,request.limit-count),'contacts_verified':0,'strategy':strategy,
+                    'source_errors':source_errors,
+                    'note':'Evidence-backed candidates require manager qualification; no messages or CRM writes.'})
         except Exception as exc:
             code=str(exc) if isinstance(exc,IntelligenceError) else 'job_failed_check_dependencies'
             self.store.finish(job['id'],'failed',self.store.job(job['id']).get('result'),code)

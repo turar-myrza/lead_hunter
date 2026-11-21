@@ -225,3 +225,17 @@ clear this session; keep the control center at `/platform`.
   local suite 449 passed, 2 skipped because local docxtpl is not installed. One
   dependency deprecation warning in each environment. `main.py --help` works;
   it still displays inherited CLI version 1.5.5 despite main's v1.5.6 commit label.
+
+## Simplified discovery flow — v1.5.9 (21 November 2026)
+
+- The first real UI searches (jobs 5 and 6) returned zero candidates. Audit data
+  showed the panel selected only `product_public`, attempted seller-oriented CRM
+  queries, used the CRM Consulting site as a candidate source, and GDELT failed
+  by timeout/HTTP 429. This is a product-flow defect, not an operator error.
+- An approved audience is now sufficient to start a search. Source selection,
+  technical queries and seller-reference exclusion are application-owned. CRM
+  automation in Shymkent automatically selects `shymkent_crm`, uses the existing
+  local-signal discovery rules, and requests CRM READ ONLY review.
+- Results expose the chosen human-readable method and temporary source failures.
+  No operator must interpret adapters or compose source queries. No messages,
+  calls or CRM writes are introduced by this change.

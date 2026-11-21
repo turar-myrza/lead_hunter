@@ -134,6 +134,21 @@ async def test_campaign_same_orchestrator_and_no_outreach(svc,monkeypatch):
     svc.review(j['id'],'sample',Review(state='qualified',ethics_passed=True,rationale='Reviewed published packaging requirement',evidence_ids=['need'],next_action='Confirm specification internally'))
     assert svc.handoff(j['id'],'sample')['writes_enabled'] is False
 
+def test_crm_shymkent_search_strategy_is_automatic(svc):
+    crm=ProductProfile(brief=ProductBrief(name='CRM implementation',description='Bitrix24 sales automation',category='CRM services',market='Шымкент',buyer_paths={'organization'}),public_analysis_allowed=True)
+    product=svc.store.save_product(crm.model_dump(mode='json'))
+    analysis=svc.store.enqueue('analysis',product,crm.model_dump(mode='json'))
+    svc.store.finish(analysis['id'],'completed',{'analysis':'synthetic for strategy test'})
+    segment=Segment(name='B2B sales companies',path='organization',characteristics='Growing B2B firms',roles=['Owner'],motivations=['Control sales'],signals=['Sales hiring'],queries=['seller query'],criteria=['Multiple salespeople'],source_urls=['https://example.org/'])
+    with svc.store.base.connect() as db:
+        db.execute('INSERT INTO cc_segment(job_id,product_id,revision,payload,approved) VALUES(?,?,?,?,1)',
+                   (analysis['id'],product['id'],product['revision'],segment.model_dump_json()))
+    saved=svc.store.snapshot()['segments'][0]
+    job=svc.campaign(saved['id'],5)
+    assert job['payload']['strategy']['source_ids']==['shymkent_crm']
+    assert job['payload']['strategy']['research_context']=='crm_sales_operations'
+    assert job['payload']['strategy']['crm_read_only'] is True
+
 def test_rate_limit(client):
     client.headers['X-Control-Request']='1'
     for _ in range(10):assert client.post('/platform/api/login',json={'password':'wrong'}).status_code==401
