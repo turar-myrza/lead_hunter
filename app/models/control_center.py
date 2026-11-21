@@ -94,3 +94,15 @@ class ExtractedOrganization(Record):
 
 class Extraction(Record):
     organizations: list[ExtractedOrganization] = Field(default_factory=list, max_length=5)
+
+
+class PublicDemandSignal(Record):
+    """A public source-level B2C signal, never an individual person record."""
+    source_label: Text
+    source_label_quote: Text
+    location_quote: Text
+    demand_quote: Text
+
+
+class PublicDemandExtraction(Record):
+    signals: list[PublicDemandSignal] = Field(default_factory=list, max_length=5)

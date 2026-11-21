@@ -9,6 +9,7 @@ from app.services.universal_lead_hunter import LeadHunterApplication
 from app.services.universal_sources import ADAPTERS
 from app.services.product_discovery import ProductDiscovery
 from app.services.grounded_public_discovery import GroundedPublicDiscovery
+from app.services.b2c_public_demand import B2CPublicDemandDiscovery
 from app.integrations.product_intelligence import ProductAI,IntelligenceError
 
 class ControlCenter:
@@ -68,8 +69,6 @@ class ControlCenter:
         if product['revision']!=segment['revision']:raise ValueError('product_changed_reanalyze')
         profile=ProductProfile.model_validate(product['payload'])
         if not profile.public_analysis_allowed:raise ValueError('public_material_approval_required')
-        # Individual discovery is permissioned inbound only, never web scraping of people.
-        if segment['payload']['path']=='individual':raise ValueError('individual_inbound_adapter_required')
         strategy = self._discovery_strategy(profile, Segment.model_validate(segment['payload']))
         return self.store.enqueue('discovery', product, {
             'segment_id': segment_id,
@@ -88,6 +87,16 @@ class ControlCenter:
         public_web=['grounded_public_web'] if web_research_ready else []
         web_note=(' Public web research is enabled.' if public_web
                   else ' Broader public web research is prepared but not yet enabled.')
+        if segment.path == 'individual':
+            return {
+                'label': 'Публичные B2C-сигналы спроса',
+                'source_ids': ['b2c_public_demand'],
+                'research_context': 'general',
+                'crm_read_only': False,
+                'reason': ('Публичные страницы и Telegram-каналы исследуются только как агрегированные сигналы спроса. '
+                           'Личные профили, контакты и прямое обращение к людям не используются.'
+                           + (' Поиск включён.' if web_research_ready else ' Поиск требует включённого публичного веб-исследования.')),
+            }
         if segment.path == 'organization' and crm_product and market in {'шымкент', 'shymkent'}:
             return {
                 'label': 'Публичные коммерческие сигналы Шымкента',
@@ -193,7 +202,10 @@ class ControlCenter:
                 factory.capability=ProductDiscovery.capability
                 grounded_factory=lambda: GroundedPublicDiscovery(self.ai,seg,log)
                 grounded_factory.capability=GroundedPublicDiscovery.capability
-                app=LeadHunterApplication(self.store.base,self.settings.lead_hunter_output,adapters=(*ADAPTERS,factory,grounded_factory))
+                b2c_factory=lambda: B2CPublicDemandDiscovery(self.ai,seg,log)
+                b2c_factory.capability=B2CPublicDemandDiscovery.capability
+                app=LeadHunterApplication(self.store.base,self.settings.lead_hunter_output,
+                    adapters=(*ADAPTERS,factory,grounded_factory,b2c_factory))
                 brief=product.brief.model_copy(update={'buyer_paths':{seg.path}})
                 request=RunRequest(brief=brief, source_ids=strategy['source_ids'],
                     research_context=strategy['research_context'], crm_read_only=strategy['crm_read_only'],
@@ -206,7 +218,7 @@ class ControlCenter:
                 with self.store.base.connect() as db:db.execute('UPDATE cc_job SET result=? WHERE id=?',(json.dumps({'run_id':run_id}),job['id']))
                 await app.process(run_id)
                 result=app.result(run_id);crm={}
-                if result and result.opportunities:
+                if result and result.opportunities and strategy['crm_read_only']:
                     # Reuse conservative read-only name matching; never treat name-only match as confirmed.
                     from app.services.sales_crm import check_sales_crm
                     companies=[SimpleNamespace(name=p.candidate.label,aliases=[],site=None,phones=[],emails=[]) for p in result.opportunities]

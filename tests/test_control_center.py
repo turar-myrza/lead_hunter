@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.config import Settings,get_settings
 from app.api.control_center import service
-from app.models.control_center import ProductProfile,ProductIntelligence,QuickProductInput,Segment,Review
+from app.models.control_center import ProductProfile,ProductIntelligence,PublicDemandExtraction,QuickProductInput,Segment,Review
 from app.models.universal_lead_hunter import ProductBrief,RunRequest
 from app.services.sales_store import SalesStore
 from app.services.control_store import ControlStore
@@ -173,6 +173,54 @@ async def test_google_grounding_redirect_is_resolved_without_general_redirects(m
     assert await fetcher.resolve_grounding_redirect('https://vertexaisearch.cloud.google.com/grounding-api-redirect/token') == 'https://bakery.kz/news/new-branch'
 
 
+async def test_b2c_public_demand_keeps_source_signal_not_a_person(monkeypatch):
+    from app.services.b2c_public_demand import B2CPublicDemandDiscovery
+    brief=ProductBrief(name='Support belt',description='A wearable product for back support.',category='Consumer product',market='Shymkent',buyer_paths={'individual'})
+    request=RunRequest(brief=brief,source_ids=['b2c_public_demand'],limit=5)
+    segment=Segment(name='Drivers',path='individual',characteristics='Drivers in Shymkent',roles=['Buyer'],motivations=['Comfort'],signals=['Public topic'],queries=['support belt'],criteria=['Opt-in'])
+    class SearchAI:
+        async def search_public_web(self,**kwargs): return [{'url':'https://t.me/s/public_channel','title':'Public channel'}]
+        async def generate(self,operation,payload,schema):
+            assert operation=='public_b2c_demand_page'
+            return PublicDemandExtraction.model_validate({'signals':[{
+                'source_label':'Public Shymkent channel',
+                'source_label_quote':'Public Shymkent channel',
+                'location_quote':'Shymkent',
+                'demand_quote':'Shymkent readers discuss support belts for long drives.'
+            }]})
+    adapter=B2CPublicDemandDiscovery(SearchAI(),segment)
+    text=('<h1>Public Shymkent channel</h1><p>Shymkent readers discuss support belts for long drives.</p>'
+          '<p>This public channel publishes practical city information and transportation topics.</p>')
+    async def fetch(*args,**kwargs):return PublicResponse('https://t.me/s/public_channel',200,'text/html',text.encode(),datetime.now(timezone.utc))
+    monkeypatch.setattr(adapter.fetcher,'fetch',fetch)
+    discovered=await adapter.discover(request)
+    verified=await adapter.verify(request,discovered)
+    assert len(verified.records)==1
+    candidate=verified.records[0].candidate
+    assert candidate.path=='individual' and candidate.subject_kind=='public_demand_signal'
+    from app.services.universal_qualification import build_opportunity,qualify
+    assert candidate.evidence[-1].kind=='market_signal'
+    assert build_opportunity(request,candidate,qualify(request,candidate),source_id='b2c_public_demand').engagement.permission=='blocked'
+
+
+async def test_b2c_public_demand_rejects_medical_claims(monkeypatch):
+    from app.services.b2c_public_demand import B2CPublicDemandDiscovery
+    brief=ProductBrief(name='Support belt',description='Consumer support product.',category='Consumer product',market='Shymkent',buyer_paths={'individual'})
+    request=RunRequest(brief=brief,source_ids=['b2c_public_demand'],limit=5)
+    audience=Segment(name='Drivers',path='individual',characteristics='Drivers in Shymkent',roles=['Buyer'],motivations=['Comfort'],signals=['Public topic'],queries=['support belt'],criteria=['Opt-in'])
+    class Model:
+        async def search_public_web(self,**kwargs):return [{'url':'https://t.me/s/public_channel','title':'Public channel'}]
+        async def generate(self,*args):return PublicDemandExtraction.model_validate({'signals':[{
+            'source_label':'Public Shymkent channel','source_label_quote':'Public Shymkent channel',
+            'location_quote':'Shymkent','demand_quote':'Shymkent readers discuss treatment of chronic back pain.'}]})
+    adapter=B2CPublicDemandDiscovery(Model(),audience)
+    text=('<h1>Public Shymkent channel</h1><p>Shymkent readers discuss treatment of chronic back pain.</p>'
+          '<p>This public channel publishes practical city information and transportation topics.</p>')
+    async def fetch(*args,**kwargs):return PublicResponse('https://t.me/s/public_channel',200,'text/html',text.encode(),datetime.now(timezone.utc))
+    monkeypatch.setattr(adapter.fetcher,'fetch',fetch)
+    assert (await adapter.verify(request,await adapter.discover(request))).records==[]
+
+
 def test_strategy_enables_grounded_research_only_when_configured(svc):
     crm=ProductProfile(brief=ProductBrief(name='CRM implementation',description='Bitrix24 sales automation',category='CRM services',market='Шымкент',buyer_paths={'organization'}),public_analysis_allowed=True)
     segment=Segment(name='B2B sales companies',path='organization',characteristics='Growing B2B firms',roles=['Owner'],motivations=['Control sales'],signals=['Sales hiring'],queries=['seller query'],criteria=['Multiple salespeople'])
@@ -183,6 +231,13 @@ def test_strategy_enables_grounded_research_only_when_configured(svc):
         'control_gemini_key':__import__('pydantic').SecretStr('mock-key'),
     })
     assert svc._discovery_strategy(crm,segment)['source_ids']==['shymkent_crm','grounded_public_web']
+
+
+def test_individual_strategy_uses_public_demand_research_without_crm(svc):
+    product=ProductProfile(brief=ProductBrief(name='Support belt',description='Consumer back-support product',category='Consumer goods',market='Shymkent',buyer_paths={'individual'}),public_analysis_allowed=True)
+    segment=Segment(name='Drivers',path='individual',characteristics='Drivers',roles=['Buyer'],motivations=['Comfort'],signals=['Public discussion'],queries=['support belt'],criteria=['Opt-in'])
+    strategy=svc._discovery_strategy(product,segment)
+    assert strategy['source_ids']==['b2c_public_demand'] and strategy['crm_read_only'] is False
 
 async def test_product_source_requires_exact_quotes_and_location(svc):
     from app.models.control_center import Extraction

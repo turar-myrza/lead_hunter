@@ -286,3 +286,21 @@ clear this session; keep the control center at `/platform`.
 - This endpoint neither starts a search nor creates CRM data by itself. Public
   search requires an explicit audience approval; outreach and CRM writes stay
   disabled.
+
+## B2C public-demand discovery — v1.5.16
+
+- Individual audiences now use `b2c_public_demand` rather than the organization
+  “find companies” path. The adapter discovers cited public pages and public
+  Telegram channel-view pages, then independently fetches and retains only
+  exact, source-level market and demand quotes.
+- The output is explicitly a public market signal, not a person, contact or
+  qualified lead. It does not use CRM matching and its engagement permission is
+  blocked; the sole next action is to prepare a consent-based inbound mechanism
+  for manager review.
+- Private groups, profiles, commenters, subscriber/member lists, phone numbers,
+  login-only pages and direct outreach remain out of scope. Public Telegram is
+  limited to `t.me/s/<public-channel>` citations that pass normal public-page
+  verification.
+- Medical/health claims and URLs explicitly dated more than one year ago are
+  excluded from current B2C market evidence rather than being reframed as buyer
+  need or purchase intent.

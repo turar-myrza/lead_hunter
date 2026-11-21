@@ -43,7 +43,10 @@ def understand(request: RunRequest) -> tuple[str, list[BuyerPath]]:
 def qualify(request, candidate, legacy_state=None):
     kinds = {item.kind for item in candidate.evidence}
     inbound = any(item.kind == 'inbound_request' and item.channel for item in candidate.evidence)
-    if 'opt_out' in kinds:
+    if candidate.subject_kind == 'public_demand_signal':
+        state, reason = 'needs_review', ('Public demand evidence is not an identifiable buyer, '
+                                         'an opt-in, or permission to contact anyone.')
+    elif 'opt_out' in kinds:
         state, reason = 'excluded', 'An opt-out is recorded for this candidate.'
     elif legacy_state:
         state, reason = legacy_state
@@ -73,7 +76,14 @@ def build_opportunity(request, candidate, qualification, *, source_id, crm_check
         contactability = 'synthetic_inbound_channel' if request.mode == 'fixture' else 'reported_inbound_channel'
 
     questions = list(QUESTIONS[candidate.path])
-    if candidate.path == 'organization':
+    if candidate.subject_kind == 'public_demand_signal':
+        questions = ['Which consent-based inbound channel can this demand signal inform?',
+                     'What product claim, price, safety information or landing-page evidence still needs review?']
+        first = ('Use the public signal only to prepare a consent-based offer, public content, '
+                 'advertising hypothesis or inbound form. Do not identify or contact individuals from the source.')
+        follow = 'Measure only opted-in requests and their permitted channel before any personal follow-up.'
+        channel = 'manager_review'
+    elif candidate.path == 'organization':
         first = 'Ask the verified process owner for requirements and routing to procurement after approval.'
         follow = 'If invited, share a sample or demonstration and confirm the purchasing decision path.'
         channel = 'manager_review'
@@ -86,8 +96,10 @@ def build_opportunity(request, candidate, qualification, *, source_id, crm_check
         channel = 'inbound_reply' if inbound else 'manager_review'
     observed_opt_in = inbound and any(event.kind == 'opt_in' and event.channel == inbound.channel and event.at
                                       for event in history)
-    permission = 'review_only'
-    if qualification.state == 'excluded' or (candidate.path == 'individual' and not inbound):
+    permission = 'blocked' if candidate.subject_kind == 'public_demand_signal' else 'review_only'
+    if candidate.subject_kind == 'public_demand_signal':
+        pass
+    elif qualification.state == 'excluded' or (candidate.path == 'individual' and not inbound):
         permission = 'blocked'
         channel = 'manager_review'
         first = 'Record the restriction and retain the case for internal review.' if qualification.state == 'excluded' else first
@@ -97,6 +109,9 @@ def build_opportunity(request, candidate, qualification, *, source_id, crm_check
 
     reference = next((item.id for item in evidence if item.kind == 'need'), None)
     inferred_need = f'Check whether {request.brief.name} addresses the candidate’s requirements.'
+    if candidate.subject_kind == 'public_demand_signal':
+        inferred_need = ('Validate whether this public market-context signal justifies a consent-based '
+                         'inbound experiment; it does not establish an individual need or purchase intent.')
     if reference:
         inferred_need += f' Review evidence {reference} and confirm fit, timing, and budget.'
     else:

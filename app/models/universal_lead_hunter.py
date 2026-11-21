@@ -41,7 +41,7 @@ class BuyerPath(Record):
 
 class Evidence(Record):
     id: Key
-    kind: Literal['identity', 'need', 'role', 'business_contact', 'inbound_request', 'opt_in', 'opt_out']
+    kind: Literal['identity', 'need', 'market_signal', 'role', 'business_contact', 'inbound_request', 'opt_in', 'opt_out']
     excerpt: Description
     url: HttpUrl | None = None
     observed_at: AwareDatetime | None = None
@@ -55,6 +55,9 @@ class Candidate(Record):
     id: Key
     label: Short
     path: PathKind
+    # A public demand signal represents a topic/channel page, never an
+    # identifiable person or permission to contact one.
+    subject_kind: Literal['buyer', 'public_demand_signal'] = 'buyer'
     evidence: list[Evidence] = Field(default_factory=list, max_length=40)
     roles: list[BuyerRole] = Field(default_factory=list, max_length=18)
     industry: str | None = Field(default=None, max_length=1200)

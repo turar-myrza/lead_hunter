@@ -192,3 +192,17 @@ A named business and its city alone are not enough for the review queue. The
 page must contain an exact, retained commercial-need, growth or automation
 quote. The resulting item is still a research candidate, not a qualified lead
 or permission to contact the company.
+
+### Individual/B2C public-demand research
+
+For an approved **individual** audience, the panel does not offer “find
+companies.” It starts `b2c_public_demand`, which produces only public,
+source-level market signals: a cited public article, community page or a public
+Telegram channel-view page. It never creates a person, phone number, profile,
+subscriber list or contact permission. Each retained signal needs exact source,
+market and topic quotes from a newly fetched page. Medical-treatment claims and
+URLs that explicitly identify a publication older than one year are rejected as
+current market evidence. Its only recommended next
+action is a manager-reviewed, consent-based advertisement, public content or
+inbound form; CRM matching, CRM writes and direct outreach do not run for this
+route.

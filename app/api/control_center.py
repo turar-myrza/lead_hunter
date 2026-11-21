@@ -77,10 +77,11 @@ def state(svc=Depends(service)):
     result['capabilities']={'product_ai':bool(svc.settings.control_ai_enabled and svc.settings.control_gemini_key),
         'crm_configured':bool(svc.settings.bitrix24_webhook_url or svc.settings.bitrix24_open_channels_webhook_url),
         'crm_writes':False,'external_calls':False,'external_messages':False,'voice_quality':'not_approved',
-        'source_adapters':['product_public: GDELT + approved public URLs','grounded_public_web: cited public web pages','evidence_intake','shymkent_crm','kazakhstan_sales'],
+        'source_adapters':['product_public: GDELT + approved public URLs','grounded_public_web: cited public organization pages',
+                           'b2c_public_demand: cited public B2C demand signals','evidence_intake','shymkent_crm','kazakhstan_sales'],
         'public_web_research_ready':bool(svc.settings.control_ai_web_research_enabled and svc.settings.control_ai_enabled and svc.settings.control_gemini_key),
         'public_telegram_discovery':'available only through cited t.me/s/<public-channel> pages when public web research is enabled',
-        'individual_discovery':'permissioned inbound adapter required',
+        'individual_discovery':'public demand-signal research only; personal contacts require inbound or opt-in evidence',
         'daily_ai_call_limit':svc.settings.control_ai_daily_calls}
     return result
 
