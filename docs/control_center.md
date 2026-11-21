@@ -154,8 +154,17 @@ production CRM writes remain outside this workflow.
 
 ## Public web research test mode
 
-The normal operator flow remains **product → approve audience → find companies**.
-The operator does not configure queries, URLs, Telegram channels, or adapters.
+The normal operator flow is **describe the product → approve one proposed
+audience → find companies**. The first step needs only a product/service name,
+a short plain-language description and a market. The application stores a
+minimal profile and queues the existing product analysis automatically;
+category, B2B/B2C path, buyer roles and signals are AI hypotheses for the
+operator to review, not mandatory form fields.
+
+The one explicit checkbox at this point authorizes sending that product
+description to the configured AI service. CRM history, contacts and personal
+data are not included. The optional extended profile is for later refinement,
+not required to start.
 
 When `CONTROL_AI_WEB_RESEARCH_ENABLED=true` is explicitly enabled alongside the
 already configured public-material Gemini analysis, the application adds the

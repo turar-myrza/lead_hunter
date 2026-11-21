@@ -20,6 +20,14 @@ class ProductProfile(Record):
     def references_public(cls, values):
         return [public_https_url(value) for value in values]
 
+
+class QuickProductInput(Record):
+    """The minimal operator input for a product-to-audience journey."""
+    name: Text
+    description: Text
+    market: Text = 'Казахстан'
+    public_analysis_allowed: bool = False
+
 class Segment(Record):
     name: Text
     path: Literal['organization', 'individual']

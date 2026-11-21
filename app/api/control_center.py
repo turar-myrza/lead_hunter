@@ -8,7 +8,7 @@ from app.core.config import get_settings
 from app.services.sales_store import SalesStore
 from app.services.control_store import ControlStore
 from app.services.control_center import ControlCenter
-from app.models.control_center import ProductProfile,CampaignInput,SegmentApproval,Review,OfferInput
+from app.models.control_center import ProductProfile,QuickProductInput,CampaignInput,SegmentApproval,Review,OfferInput
 from app.services.lead_hunter_open_channels import client_from_settings,inventory
 from app.integrations.bitrix24_open_channels import OpenChannelsError
 
@@ -100,6 +100,10 @@ def knowledge(svc=Depends(service)):
 @router.post('/api/products',dependencies=[Depends(auth)])
 def create_product(data:ProductProfile,svc=Depends(service)):
     return svc.store.save_product(data.model_dump(mode='json'))
+
+@router.post('/api/products/quick-start',dependencies=[Depends(auth)])
+def quick_start(data:QuickProductInput,svc=Depends(service)):
+    return invoke(lambda:svc.quick_start(data))
 
 @router.put('/api/products/{ident}',dependencies=[Depends(auth)])
 def update_product(ident:int,data:ProductProfile,svc=Depends(service)):

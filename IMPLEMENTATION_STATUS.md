@@ -274,3 +274,15 @@ clear this session; keep the control center at `/platform`.
 - This does not enable CRM writes, calls or messages. Live output remains
   review-only, and CRM matching is still limited when no verified business
   identifier is available.
+
+## Minimal product intake — v1.5.15
+
+- Added `POST /platform/api/products/quick-start`: product name, a short
+  plain-language description, target market and one explicit public-AI consent
+  are sufficient. It saves a minimal profile and queues product analysis.
+- Category and B2B/B2C buyer paths are intentionally AI hypotheses, then shown
+  to the operator for a one-click audience approval before discovery. The
+  longer profile remains optional for later refinement.
+- This endpoint neither starts a search nor creates CRM data by itself. Public
+  search requires an explicit audience approval; outreach and CRM writes stay
+  disabled.

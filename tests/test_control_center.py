@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.config import Settings,get_settings
 from app.api.control_center import service
-from app.models.control_center import ProductProfile,ProductIntelligence,Segment,Review
+from app.models.control_center import ProductProfile,ProductIntelligence,QuickProductInput,Segment,Review
 from app.models.universal_lead_hunter import ProductBrief,RunRequest
 from app.services.sales_store import SalesStore
 from app.services.control_store import ControlStore
@@ -80,6 +80,26 @@ def test_public_ai_approval_required(svc):
     p=profile().model_copy(update={'public_analysis_allowed':False})
     ident=svc.store.save_product(p.model_dump(mode='json'))['id']
     with pytest.raises(ValueError,match='public_material'):svc.analyze(ident)
+
+
+async def test_quick_start_needs_only_a_short_product_brief_and_queues_analysis(svc):
+    started=svc.quick_start(QuickProductInput(
+        name='Cake delivery trays',
+        description='Rigid reusable trays that help bakeries transport custom cakes safely.',
+        market='Warsaw',
+        public_analysis_allowed=True,
+    ))
+    product=started['product']
+    assert product['payload']['brief']['category']=='Категория определяется AI после анализа продукта'
+    assert set(product['payload']['brief']['buyer_paths'])=={'individual','organization'}
+    assert started['analysis_job']['status']=='queued'
+    assert await svc.worker_once()
+    assert svc.store.job(started['analysis_job']['id'])['status']=='completed'
+
+
+def test_quick_start_keeps_public_ai_consent_explicit(svc):
+    with pytest.raises(ValueError,match='public_material'):
+        svc.quick_start(QuickProductInput(name='Example product',description='A short useful product description.',market='Shymkent'))
 
 async def test_model_error_is_persisted_not_fake_analysis(svc):
     class Broken:

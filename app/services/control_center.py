@@ -1,8 +1,8 @@
 """Control-center application service; campaigns execute the universal orchestrator."""
 import asyncio,json
 from types import SimpleNamespace
-from app.models.control_center import ProductProfile,ProductIntelligence,Segment,Review
-from app.models.universal_lead_hunter import RunRequest
+from app.models.control_center import ProductProfile,ProductIntelligence,QuickProductInput,Segment,Review
+from app.models.universal_lead_hunter import ProductBrief,RunRequest
 from app.services.control_store import ControlStore,unpack
 from app.services.sales_store import now
 from app.services.universal_lead_hunter import LeadHunterApplication
@@ -22,6 +22,27 @@ class ControlCenter:
         profile=ProductProfile.model_validate(product['payload'])
         if not profile.public_analysis_allowed:raise ValueError('public_material_approval_required')
         return self.store.enqueue('analysis',product,profile.model_dump(mode='json'))
+
+    def quick_start(self, data: QuickProductInput):
+        """Save a minimal brief and queue its analysis immediately.
+
+        Category and buyer paths are generated as hypotheses for the operator to
+        approve; they are not a questionnaire the operator must fill in.
+        """
+        if not data.public_analysis_allowed:
+            raise ValueError('public_material_approval_required')
+        profile=ProductProfile(
+            brief=ProductBrief(
+                name=data.name,
+                description=data.description,
+                category='Категория определяется AI после анализа продукта',
+                market=data.market,
+                buyer_paths={'organization','individual'},
+            ),
+            public_analysis_allowed=True,
+        )
+        product=self.store.save_product(profile.model_dump(mode='json'))
+        return {'product':product,'analysis_job':self.analyze(product['id'])}
 
     def offer(self, ident, data):
         product=self.store.product(ident)
