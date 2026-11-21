@@ -186,9 +186,9 @@ class ControlCenter:
                     checks,_=await check_sales_crm(companies)
                     crm={p.candidate.id:checks.get(p.candidate.label,{'state':'unavailable'}) for p in result.opportunities}
                 count=len(result.opportunities) if result else 0
-                status='completed' if result and app.status(run_id).status=='completed' and count>=request.limit else 'partial'
                 workflow=app.status(run_id)
-                source_errors=[item.model_dump(mode='json') for item in workflow.stages[2].errors] if workflow else []
+                source_errors=[error.model_dump(mode='json') for stage in (workflow.stages if workflow else []) for error in stage.errors]
+                status='completed' if result and workflow and workflow.status=='completed' and count>=request.limit else 'partial'
                 self.store.finish(job['id'],status,{'run_id':run_id,'target':request.limit,'found':count,'crm':crm,
                     'shortfall':max(0,request.limit-count),'contacts_verified':0,'strategy':strategy,
                     'source_errors':source_errors,
