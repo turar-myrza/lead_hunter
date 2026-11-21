@@ -51,10 +51,15 @@ class ProductDiscovery:
                     exact=lambda quote: bool(quote) and ' '.join(quote.casefold().split()) in normalized
                     if not exact(item.identity_quote) or item.name.casefold() not in item.identity_quote.casefold():continue
                     if not exact(item.location_quote) or request.brief.market.casefold() not in item.location_quote.casefold():continue
+                    # A named company and a city are not a commercial signal.
+                    # Discovery must retain an exact, page-backed need/growth/
+                    # automation statement before it can enter even the manager
+                    # qualification queue.
+                    if not exact(item.need_quote):continue
                     key='org-'+hashlib.sha256(item.name.casefold().strip().encode()).hexdigest()[:20]
                     evidence=[Evidence(id='identity',kind='identity',excerpt=item.identity_quote,url=url,observed_at=response.checked_at,basis='public_page'),
                               Evidence(id='location',kind='identity',excerpt=item.location_quote,url=url,observed_at=response.checked_at,basis='public_page')]
-                    if exact(item.need_quote):evidence.append(Evidence(id='need',kind='need',excerpt=item.need_quote,url=url,observed_at=response.checked_at,basis='public_page'))
+                    evidence.append(Evidence(id='need',kind='need',excerpt=item.need_quote,url=url,observed_at=response.checked_at,basis='public_page'))
                     roles=[]
                     if exact(item.role_quote) and item.role_actor and item.role_actor.casefold() in item.role_quote.casefold():
                         evidence.append(Evidence(id='role',kind='role',excerpt=item.role_quote,url=url,observed_at=response.checked_at,basis='public_page'))

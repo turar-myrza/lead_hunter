@@ -160,13 +160,26 @@ The operator does not configure queries, URLs, Telegram channels, or adapters.
 When `CONTROL_AI_WEB_RESEARCH_ENABLED=true` is explicitly enabled alongside the
 already configured public-material Gemini analysis, the application adds the
 `grounded_public_web` adapter to an organizational run. It asks the configured
-provider to discover cited public web pages only. Those citations are discovery
-hints, not evidence: the application fetches each page again through
+provider to run up to three narrow searches based on the approved audience
+signals, rather than a generic company search. The request excludes registries,
+catalogues, job aggregators, search-result pages and unnamed claims. Citations
+remain discovery hints, not evidence: the application fetches each page again through
 `PublicFetcher`, honoring robots.txt, request limits, blocks and CAPTCHA
 responses, then extracts evidence from the page itself.
+
+Gemini may return a citation through its own
+`vertexaisearch.cloud.google.com/grounding-api-redirect/...` URL. This is the
+only redirect class resolved by the application; its destination must be a
+single valid public HTTPS URL and is then independently fetched under the
+destination site's robots policy. General redirect following remains disabled.
 
 Public Telegram is limited to cited `https://t.me/s/<public-channel>` pages.
 Private groups, invite links, account pages, login-only content, retained
 sessions and access-control workarounds are excluded. No CRM data is sent to
 the provider. This mode still prepares review-only opportunities: it cannot
 create Bitrix24 records, send messages, or place calls.
+
+A named business and its city alone are not enough for the review queue. The
+page must contain an exact, retained commercial-need, growth or automation
+quote. The resulting item is still a research candidate, not a qualified lead
+or permission to contact the company.

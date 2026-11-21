@@ -16,6 +16,7 @@ _ROBOT_NAME = USER_AGENT.split('/')[0].casefold()
 _DNS_NAME = re.compile(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
 _SENSITIVE_QUERY = re.compile(r'^(?:key|api[_-]?key|auth|authorization|access[_-]?token|token|secret|password|signature|session(?:id)?)$', re.I)
 _NAT64 = tuple(ipaddress.ip_network(x) for x in ('64:ff9b::/96', '64:ff9b:1::/48'))
+_GOOGLE_GROUNDING_HOST = 'vertexaisearch.cloud.google.com'
 
 
 class PublicSourceError(ValueError):
@@ -99,6 +100,7 @@ class PublicResponse:
     media_type: str
     body: bytes
     checked_at: datetime
+    redirect_location: str | None = None
 
 
 def _request(url: str, *, timeout: float, max_bytes: int) -> PublicResponse:
@@ -117,7 +119,8 @@ def _request(url: str, *, timeout: float, max_bytes: int) -> PublicResponse:
         with conn.getresponse() as response:
             media = (response.getheader('Content-Type') or '').split(';', 1)[0].strip().casefold()
             if response.status not in {200, 204}:
-                return PublicResponse(url, response.status, media, b'', datetime.now(timezone.utc))
+                return PublicResponse(url, response.status, media, b'', datetime.now(timezone.utc),
+                                      response.getheader('Location'))
             if (response.getheader('Content-Encoding') or 'identity').casefold() != 'identity':
                 raise PublicSourceError('Compressed public responses are not accepted')
             length = response.getheader('Content-Length')
@@ -242,7 +245,7 @@ class PublicFetcher:
         self._cache: dict[str, PublicResponse] = {}
         self._lock = asyncio.Lock()
 
-    async def _get(self, url, host, delay):
+    async def _get(self, url, host, delay, *, allow_redirect=False):
         if self.requests >= self.max_requests:
             raise PublicSourceError('Public request budget exhausted', retryable=True)
         if host in self._blocked:
@@ -263,7 +266,7 @@ class PublicFetcher:
             reason = f'Public provider blocked this run (HTTP {response.status} / challenge)'
             self._blocked[host] = reason
             raise PublicSourceError(reason)
-        if 300 <= response.status < 400:
+        if 300 <= response.status < 400 and not allow_redirect:
             raise PublicSourceError('Redirect not followed')
         return response
 
@@ -304,3 +307,25 @@ class PublicFetcher:
                 raise PublicSourceError('Unexpected public response media type')
             self._cache[url] = response
             return response
+
+    async def resolve_grounding_redirect(self, url: str) -> str:
+        """Resolve one Google-grounding redirect without enabling general redirects.
+
+        The API returns these URLs as citations. The final destination is still
+        independently validated and fetched through ``fetch()``, including its
+        own robots.txt policy. Redirects from all other hosts remain prohibited.
+        """
+        url=public_https_url(url)
+        parts=urlsplit(url)
+        if parts.hostname != _GOOGLE_GROUNDING_HOST or not parts.path.startswith('/grounding-api-redirect/'):
+            raise PublicSourceError('Not a Google grounding redirect')
+        async with self._lock:
+            # This is the sole allowed redirect response in the public fetcher.
+            # Its Location is validated below; no network request follows it here.
+            response=await self._get(url,parts.hostname,0,allow_redirect=True)
+        if response.status not in {301,302,303,307,308} or not response.redirect_location:
+            raise PublicSourceError('Google grounding redirect has no destination')
+        destination=public_https_url(response.redirect_location)
+        if urlsplit(destination).hostname == _GOOGLE_GROUNDING_HOST:
+            raise PublicSourceError('Nested Google grounding redirect is not permitted')
+        return destination

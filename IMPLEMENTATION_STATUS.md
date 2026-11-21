@@ -258,3 +258,19 @@ clear this session; keep the control center at `/platform`.
 - `CONTROL_EXTERNAL_ACTIONS_ENABLED=false` is the default for any later adapter
   that supports calls or messages. Research, review and CRM READ ONLY are not
   authorization for outreach.
+
+## Grounded public-search correction — v1.5.14
+
+- Google Search grounding citations are sometimes returned through a Google
+  redirect wrapper. The public fetcher now resolves only that exact wrapper,
+  validates the final public HTTPS target, then applies the destination site's
+  normal robots and request rules. General redirects remain blocked.
+- An approved audience now produces at most three focused public searches from
+  its commercial signals. It excludes registries, catalogues, aggregators,
+  search-result pages and unnamed claims in the discovery instruction.
+- A company is retained for the internal qualification queue only with an exact
+  page-backed commercial-need, growth or automation quote. Identity and city
+  evidence alone cannot create a research candidate.
+- This does not enable CRM writes, calls or messages. Live output remains
+  review-only, and CRM matching is still limited when no verified business
+  identifier is available.

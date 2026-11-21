@@ -32,7 +32,8 @@ class FakeAI:
 
 @pytest.fixture
 def svc(tmp_path):
-    settings=Settings(_env_file=None,lead_hunter_api_token='test-password',lead_hunter_db=tmp_path/'state.db',lead_hunter_output=tmp_path/'out')
+    settings=Settings(_env_file=None,lead_hunter_api_token='test-password',lead_hunter_db=tmp_path/'state.db',lead_hunter_output=tmp_path/'out',
+        control_ai_enabled=False,control_ai_web_research_enabled=False)
     return ControlCenter(ControlStore(SalesStore(settings.lead_hunter_db)),settings,FakeAI())
 
 @pytest.fixture
@@ -123,6 +124,35 @@ async def test_grounded_public_web_only_returns_cited_safe_public_pages(svc):
     assert svc.store.snapshot()['usage'][0]['operation']=='public_web_research'
 
 
+async def test_grounded_adapter_resolves_only_google_grounding_redirects(svc,monkeypatch):
+    from app.services.grounded_public_discovery import GroundedPublicDiscovery
+    s=segment()
+    class SearchAI:
+        async def search_public_web(self,**kwargs):
+            return [
+                {'url':'https://vertexaisearch.cloud.google.com/grounding-api-redirect/token','title':'Google citation'},
+                {'url':'https://company.kz/news/growth','title':'Direct public page'},
+            ]
+    adapter=GroundedPublicDiscovery(SearchAI(),s)
+    async def resolve(url):
+        assert 'vertexaisearch.cloud.google.com' in url
+        return 'https://bakery.kz/news/branch'
+    monkeypatch.setattr(adapter.fetcher,'resolve_grounding_redirect',resolve)
+    result=await adapter.discover(RunRequest(brief=profile().brief,limit=5))
+    assert result.payload==['https://bakery.kz/news/branch','https://company.kz/news/growth']
+
+
+async def test_google_grounding_redirect_is_resolved_without_general_redirects(monkeypatch):
+    from app.integrations.lead_hunter_public import PublicFetcher, PublicResponse
+    fetcher=PublicFetcher()
+    async def request(url, host, delay, *, allow_redirect=False):
+        assert host=='vertexaisearch.cloud.google.com'
+        assert allow_redirect is True
+        return PublicResponse(url,302,'',b'',datetime.now(timezone.utc),'https://bakery.kz/news/new-branch')
+    monkeypatch.setattr(fetcher,'_get',request)
+    assert await fetcher.resolve_grounding_redirect('https://vertexaisearch.cloud.google.com/grounding-api-redirect/token') == 'https://bakery.kz/news/new-branch'
+
+
 def test_strategy_enables_grounded_research_only_when_configured(svc):
     crm=ProductProfile(brief=ProductBrief(name='CRM implementation',description='Bitrix24 sales automation',category='CRM services',market='Шымкент',buyer_paths={'organization'}),public_analysis_allowed=True)
     segment=Segment(name='B2B sales companies',path='organization',characteristics='Growing B2B firms',roles=['Owner'],motivations=['Control sales'],signals=['Sales hiring'],queries=['seller query'],criteria=['Multiple salespeople'])
@@ -147,6 +177,20 @@ async def test_product_source_requires_exact_quotes_and_location(svc):
     result=await ProductDiscovery(Model(),fetcher=Fetch()).verify(request,Discovery(['https://bakery.example.org/']))
     assert len(result.records)==1 and result.records[0].candidate.roles[0].actor=='Anna'
     assert result.records[0].candidate.evidence[0].basis=='public_page'
+
+
+async def test_product_source_does_not_queue_company_without_a_direct_need_signal():
+    from app.models.control_center import Extraction
+    text='<h1>Example Retail</h1><p>Example Retail in Shymkent operates 20 stores.</p>'
+    class Fetch:
+        async def fetch(self,*a,**k):return PublicResponse('https://retail.example.org/',200,'text/html',text.encode(),datetime.now(timezone.utc))
+    class Model:
+        async def generate(self,*a):return Extraction.model_validate({'organizations':[
+            {'name':'Example Retail','industry':'Retail','location':'Shymkent','identity_quote':'Example Retail in Shymkent operates 20 stores.','location_quote':'Example Retail in Shymkent operates 20 stores.'}
+        ]})
+    request=RunRequest(brief=ProductBrief(name='CRM',description='Automation',category='Services',market='Shymkent',buyer_paths={'organization'}),limit=5)
+    result=await ProductDiscovery(Model(),fetcher=Fetch()).verify(request,Discovery(['https://retail.example.org/']))
+    assert result.records==[]
 
 async def test_campaign_same_orchestrator_and_no_outreach(svc,monkeypatch):
     from app.services import control_center as module
