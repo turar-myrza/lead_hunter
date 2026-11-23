@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import html as html_lib
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -14,11 +15,12 @@ from app.api.control_center import auth
 from app.core.config import get_settings
 from app.services.ads_store import AdsStore
 from app.services.ai_engine import AIEngine, AIEngineError, build_call_script_preview
+from app.services.market_search import MarketSearchEngine
 from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
 from app.services.web_scraper import SSRFBlockedError
 
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 
 router = APIRouter(prefix="/platform/api/studio", tags=["Platform Studio"])
 
@@ -30,6 +32,11 @@ def studio_store() -> PlatformStore:
 
 def studio_ai(store: PlatformStore = Depends(studio_store)) -> AIEngine:
     return AIEngine(store, get_settings())
+
+
+def studio_market() -> MarketSearchEngine:
+    settings = get_settings()
+    return MarketSearchEngine(SalesStore(settings.lead_hunter_db))
 
 
 # ------------------------------------------------------------------
@@ -377,6 +384,7 @@ async def analyze_audiences_prompt(
     data: AudiencePromptIn,
     store: PlatformStore = Depends(studio_store),
     ai: AIEngine = Depends(studio_ai),
+    market: MarketSearchEngine = Depends(studio_market),
 ):
     product = store.get_product(data.product_key) if data.product_key else None
     try:
@@ -385,7 +393,38 @@ async def analyze_audiences_prompt(
         raise HTTPException(502, str(exc)) from None
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"ai_transport_error: {exc}") from None
+
+    # Enrich each proposed segment with real FTS5 seed match count
+    try:
+        if market.count_indexed() == 0:
+            market.index_csv_seeds(Path(__file__).resolve().parents[2] / "data")
+        for seg in result.get("segments") or []:
+            seg["matched_seed_count"] = market.estimate_segment_volume(
+                seg.get("keywords") or [],
+                seg.get("regions") or [],
+            )
+    except Exception:
+        pass
     return result
+
+
+@router.get("/audiences/search-seeds", dependencies=[Depends(auth)])
+def search_audience_seeds(
+    q: str = "",
+    region: str = "",
+    min_budget: float = 0.0,
+    limit: int = 50,
+    market: MarketSearchEngine = Depends(studio_market),
+):
+    if market.count_indexed() == 0:
+        market.index_csv_seeds(Path(__file__).resolve().parents[2] / "data")
+    return market.search(query=q, region=region, min_budget_kzt=min_budget, limit=limit)
+
+
+@router.post("/audiences/reindex", dependencies=[Depends(auth)])
+def reindex_audience_seeds(market: MarketSearchEngine = Depends(studio_market)):
+    count = market.index_csv_seeds(Path(__file__).resolve().parents[2] / "data")
+    return {"indexed": count, "total_indexed": market.count_indexed()}
 
 
 @router.post("/audiences/apply", dependencies=[Depends(auth)])

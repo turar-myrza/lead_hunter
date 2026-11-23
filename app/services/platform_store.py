@@ -9,7 +9,7 @@ from typing import Any, Optional
 from app.services.catalog import CATALOG
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 
 STUDIO_SCHEMA = """
 CREATE TABLE IF NOT EXISTS am_ai_providers(

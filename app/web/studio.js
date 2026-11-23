@@ -1,13 +1,13 @@
 'use strict';
 
 /* =========================================================================
-   Lead Hunter Platform Studio UI (v2.4.0)
+   Lead Hunter Platform Studio UI (v2.5.0)
    - Declarative Component Mounts (Zero DOM duplication on Grid/List toggle)
    - LiteLLM Unified Router & Tier Connectors (Research, Reasoning, Test, Local)
    - Real-Time Model Ping (Latency, Token Count, Estimated Cost)
    - SSRF-Safe Prompt-to-Product Web Scraper & Pydantic Schema Extractor
    - Branded Commercial Offer HTML/PDF Preview Generator
-   - Prompt-to-Audience AI Client Analyzer (Push to Ads Manager)
+   - SQLite FTS5 BM25 Market Seed Explorer & Prompt-to-Audience Analyzer
    - Telephony Engine, Voice Audio Preview (KZ/RU), Company Profile & Call Script Studio
    ========================================================================= */
 
@@ -481,6 +481,9 @@ window.PlatformStudioUI = (() => {
         sc.append(head);
         if (seg.description) sc.append(el('p', seg.description, 'product-meta'));
         if (seg.estimated_volume) sc.append(el('div', '📊 Est. Market: ' + seg.estimated_volume, 'product-price'));
+        if (typeof seg.matched_seed_count === 'number' && seg.matched_seed_count > 0) {
+          sc.append(el('div', `⚡ ${seg.matched_seed_count} verified seeds matched in DB`, 'badge live-badge'));
+        }
         if (seg.decision_makers?.length) sc.append(el('div', '👤 Roles: ' + seg.decision_makers.join(', '), 'product-meta'));
         if (seg.buying_signals?.length) sc.append(el('div', '⚡ Signals: ' + seg.buying_signals.join('; '), 'product-meta'));
         if (seg.keywords?.length) sc.append(el('div', '🔍 Keywords: ' + seg.keywords.join(', '), 'muted'));
@@ -519,6 +522,55 @@ window.PlatformStudioUI = (() => {
     }
 
     renderResults();
+
+    // Card 2: Live FTS5 BM25 Market Seed Explorer
+    const ftsCard = el('div', undefined, 'card');
+    ftsCard.append(el('h3', '⚡ Live FTS5 Market Seed Explorer (BM25 Sub-50ms)'));
+    paragraph(ftsCard, 'Search indexed Kazakhstan B2B/B2G procurement registries & company seeds by keyword, activity, or region.', 'muted');
+
+    const ftsBar = el('div', undefined, 'studio-inline-row');
+    const qInput = el('input');
+    qInput.type = 'text';
+    qInput.placeholder = 'Search companies, BIN, medical, lab, equipment...';
+    const regSel = el('select');
+    for (const [val, txt] of [['', 'All Regions'], ['almaty', 'Almaty'], ['astana', 'Astana'], ['shymkent', 'Shymkent']]) {
+      const o = el('option', txt); o.value = val; regSel.append(o);
+    }
+    const ftsResults = el('div');
+    const runFtsSearch = async () => {
+      const url = `/studio/audiences/search-seeds?q=${encodeURIComponent(qInput.value.trim())}&region=${encodeURIComponent(regSel.value)}&limit=25`;
+      const res = await api(url);
+      ftsResults.replaceChildren();
+      ftsResults.append(el('p', `⚡ Query took ${res.query_ms} ms · Showing ${res.count} of ${res.total_indexed} indexed seeds`, 'muted'));
+      if (res.items?.length) {
+        const tbl = el('table');
+        const thead = el('thead');
+        const hr = el('tr');
+        for (const col of ['Company', 'BIN', 'City', 'Category / Activity', 'Phone', 'Source']) hr.append(el('th', col));
+        thead.append(hr);
+        tbl.append(thead);
+        const tbody = el('tbody');
+        for (const r of res.items) {
+          const tr = el('tr');
+          add(tr,
+            el('td', r.company),
+            el('td', r.bin || '—'),
+            el('td', r.city || r.region || '—'),
+            el('td', (r.category ? r.category + ' · ' : '') + (r.activity || '—')),
+            el('td', r.phone || '—'),
+            el('td', r.source || 'seed')
+          );
+          tbody.append(tr);
+        }
+        tbl.append(tbody);
+        ftsResults.append(tbl);
+      }
+    };
+    const searchBtn = button('🔍 Search Seeds', runFtsSearch, 'primary-btn');
+    add(ftsBar, qInput, regSel, searchBtn);
+    ftsCard.append(ftsBar, ftsResults);
+    root.append(ftsCard);
+    runFtsSearch().catch(() => {});
   }
 
   /* =========================================================================

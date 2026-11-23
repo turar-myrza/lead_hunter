@@ -524,4 +524,94 @@ def test_product_offer_preview_xss_and_branding(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_fts5_100k_seed_query_under_50ms(tmp_path):
+    from app.services.market_search import MarketSearchEngine
+
+    engine = MarketSearchEngine(SalesStore(tmp_path / "bench_100k.sqlite3"))
+    # Generate 100,000 seed records
+    records = []
+    for i in range(100_000):
+        if i % 500 == 0:
+            records.append({
+                "bin": f"230540{i:06d}",
+                "company": f"Almaty Diagnostic Centrifuge Lab #{i}",
+                "city": "Almaty",
+                "region": "almaty",
+                "category": "Medical Equipment",
+                "activity": "Clinical centrifuge blood separation laboratory",
+                "contract_sum_kzt": 5_500_000.0,
+            })
+        else:
+            records.append({
+                "bin": f"190140{i:06d}",
+                "company": f"Kazakhstan Trade Partner TOO #{i}",
+                "city": "Astana" if i % 2 == 0 else "Shymkent",
+                "category": "General B2B",
+                "activity": "Wholesale industrial logistics supply",
+                "contract_sum_kzt": 1_200_000.0,
+            })
+
+    inserted = engine.bulk_insert_seeds(records)
+    assert inserted == 100_000
+    assert engine.count_indexed() == 100_000
+
+    res = engine.search(query="centrifuge diagnostic", region="almaty", limit=25)
+    assert res["count"] == 25
+    assert res["total_indexed"] == 100_000
+    assert res["query_ms"] < 50.0, f"Expected sub-50ms query, got {res['query_ms']}ms"
+
+
+def test_fts5_sql_injection_and_syntax_sanitization(tmp_path):
+    from app.services.market_search import MarketSearchEngine
+
+    engine = MarketSearchEngine(SalesStore(tmp_path / "sqli.sqlite3"))
+    engine.bulk_insert_seeds([
+        {"company": "MedTech Almaty", "city": "Almaty", "category": "Medical", "activity": "Centrifuges"},
+        {"company": "Astana Clinic", "city": "Astana", "category": "Clinic", "activity": "Diagnostics"},
+    ])
+
+    malicious_inputs = [
+        "'; DROP TABLE am_market_seeds; --",
+        'MedTech" OR 1=1 --',
+        'NEAR(MedTech, Clinic) * "unclosed',
+        "' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12 --",
+    ]
+    for payload in malicious_inputs:
+        res = engine.search(query=payload, region="almaty' OR '1'='1")
+        assert isinstance(res["items"], list)
+        assert engine.count_indexed() == 2
+
+
+def test_market_search_api_endpoint_and_csv_indexing(tmp_path):
+    from app.api.platform_studio import studio_market
+    from app.services.market_search import MarketSearchEngine
+
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    pstore = PlatformStore(base)
+    AdsStore(base)
+    m_engine = MarketSearchEngine(base)
+    m_engine.bulk_insert_seeds([
+        {"company": "Almaty Cardio Center", "city": "Almaty", "category": "Hospital", "activity": "Medical lab equipment"},
+    ])
+
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[studio_store] = lambda: pstore
+    app.dependency_overrides[studio_market] = lambda: m_engine
+    app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+    try:
+        with TestClient(app) as client:
+            h = {"X-Control-Request": "1"}
+            client.post("/platform/api/login", json={"password": "studio-test-secret"}, headers=h)
+            res = client.get("/platform/api/studio/audiences/search-seeds?q=cardio&region=almaty", headers=h)
+            assert res.status_code == 200
+            data = res.json()
+            assert data["count"] == 1
+            assert data["items"][0]["company"] == "Almaty Cardio Center"
+            assert data["query_ms"] >= 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+
 
