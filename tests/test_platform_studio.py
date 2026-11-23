@@ -663,7 +663,7 @@ def test_isolated_call_context_and_daily_cap_enforcement(tmp_path):
         "icp_score": 90,
         "whitelisted": 1,
     }])
-    lead = astore.list_leads(campaign_ids=[camp["id"]])[0]
+    lead = astore.list_leads(campaign_ids=[camp["id"]])["items"][0]
     lead["campaign_status"] = "active"
     lead["product_key"] = "centrifuges"
     lead["objective"] = "call_then_offer"
