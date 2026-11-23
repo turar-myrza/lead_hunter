@@ -119,6 +119,10 @@ body {
   gap: 8px;
 }
 
+[hidden], #shell[hidden], #login[hidden] {
+  display: none !important;
+}
+
 /* Shell Layout */
 #shell {
   display: flex;

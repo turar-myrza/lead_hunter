@@ -17,7 +17,7 @@ from app.services.catalog import CATALOG
 from app.services.sales_store import SalesStore, now
 from version import VERSION as APP_VERSION
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 
 router = APIRouter(prefix="/platform/api/ads", tags=["Ads manager"])
 

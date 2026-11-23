@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.services.catalog import CATALOG_KEYS
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 
 KATO_MAP = {
     "almaty": "750000000",
