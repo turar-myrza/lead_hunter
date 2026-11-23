@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.services.catalog import CATALOG_KEYS
 
-VERSION = "1.7.1"
+VERSION = "2.0.0"
 
 KATO_MAP = {
     "almaty": "750000000",
@@ -95,9 +95,10 @@ class CampaignIn(BaseModel):
     @field_validator("product_key")
     @classmethod
     def check_product(cls, value: str) -> str:
-        if value not in CATALOG_KEYS:
-            raise ValueError(f"Unknown product_key '{value}'")
-        return value
+        cleaned = (value or "").strip()
+        if not cleaned or len(cleaned) < 2 or len(cleaned) > 80:
+            raise ValueError(f"Invalid product_key '{value}'")
+        return cleaned
 
 
 class AudienceIn(BaseModel):

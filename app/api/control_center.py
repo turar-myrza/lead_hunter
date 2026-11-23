@@ -9,6 +9,7 @@ from app.services.sales_store import SalesStore
 from app.services.control_store import ControlStore
 from app.services.control_center import ControlCenter
 from app.services.catalog import CATALOG, resolve_catalog_item
+from app.services.platform_store import PlatformStore
 from app.services.ads_manager import dispatch_offer
 from app.models.control_center import ProductProfile,CampaignInput,SegmentApproval,Review
 from app.services.lead_hunter_open_channels import client_from_settings,inventory
@@ -24,6 +25,10 @@ class CallRequest(BaseModel):
     product:str=Field(default="Зертханалық центрифугалар",min_length=2,max_length=150)
     lang:str=Field(default="kz",pattern=r'^(kz|ru)$')
     details:str=Field(default="",max_length=1000)
+    greeting:str=Field(default="",max_length=1000)
+    custom_prompt:str=Field(default="",max_length=3000)
+    voice:str=Field(default="",max_length=40)
+    seller:str=Field(default="",max_length=200)
 
 class OfferRequest(BaseModel):
     phone:str=Field(min_length=7,max_length=32)
@@ -63,7 +68,7 @@ def page():return FileResponse(WEB/'control.html',headers=HEADERS)
 
 @router.get('/assets/{name}')
 def asset(name:str):
-    if name not in {'control.js','control.css','ads_manager.js'}:raise HTTPException(404)
+    if name not in {'control.js','control.css','ads_manager.js','studio.js'}:raise HTTPException(404)
     return FileResponse(WEB/name,headers=HEADERS)
 
 @router.post('/api/login',dependencies=[Depends(csrf)])
@@ -97,12 +102,15 @@ def state(svc=Depends(service)):
         'source_adapters':['product_public: GDELT + approved public URLs','evidence_intake','shymkent_crm','kazakhstan_sales','asterisk_sip_sdr','meta_whatsapp_cloud'],
         'social_search':'telegram_scraper_active','individual_discovery':'live_outreach_enabled',
         'daily_ai_call_limit':svc.settings.control_ai_daily_calls}
-    result['catalog']=CATALOG
+    pstore = PlatformStore(svc.store.base)
+    result['catalog']=pstore.list_products()
+    result['company']=pstore.get_company_profile()
+    result['telephony']=pstore.get_telephony_config()
     return result
 
 @router.get('/api/outreach/catalog',dependencies=[Depends(auth)])
-def outreach_catalog():
-    return CATALOG
+def outreach_catalog(svc=Depends(service)):
+    return PlatformStore(svc.store.base).list_products()
 
 @router.get('/api/outreach/history',dependencies=[Depends(auth)])
 def outreach_history(svc=Depends(service)):
@@ -111,16 +119,29 @@ def outreach_history(svc=Depends(service)):
 @router.post('/api/outreach/call',dependencies=[Depends(auth)])
 def start_outreach_call(data:CallRequest,svc=Depends(service)):
     from calling.pbx_caller import call_lead
+    pstore = PlatformStore(svc.store.base)
+    company = pstore.get_company_profile()
+    telephony = pstore.get_telephony_config()
     phone=data.phone.strip()
     product=data.product.strip()
     lang=data.lang.strip().lower()
     details=data.details.strip()
+    seller=(data.seller or company.get('company_name') or '').strip()
+    voice=(data.voice or telephony.get('voice_name') or 'Kore').strip()
+    greeting=(data.greeting or (telephony.get('custom_greeting_kz') if lang=='kz' else telephony.get('custom_greeting_ru')) or '').strip()
+    custom_prompt=(data.custom_prompt or (telephony.get('custom_prompt_kz') if lang=='kz' else telephony.get('custom_prompt_ru')) or '').strip()
+    transfer=(telephony.get('transfer_extension') or '055').strip()
 
     res=call_lead(
         phone=phone,
         products=[product],
         details=details,
         lang=lang,
+        greeting=greeting,
+        seller=seller,
+        voice=voice,
+        custom_prompt=custom_prompt,
+        transfer_target=transfer,
         host=svc.settings.telephony_host,
         user=svc.settings.telephony_ssh_user,
         remote_script=svc.settings.telephony_caller_script,

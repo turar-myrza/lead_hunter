@@ -9,15 +9,17 @@ let activePhone = '+77056945245';
 let activeProduct = 'centrifuges';
 let activeLang = 'kz';
 let activeDetails = '';
+let pendingAudienceProduct = null;
 
 const sections = [
   'Ads Manager',
   'Live Outreach & Voice SDR',
   'Product Catalog & Offers',
-  'AI Product Intelligence',
   'Target Audience & ICP',
+  'AI & CRM Connectors',
+  'Telephony & Script Studio',
+  'AI Product Intelligence',
   'Lead Discovery',
-  'CRM Integration',
   'Outreach Analytics'
 ];
 
@@ -173,6 +175,38 @@ function render() {
   if (section === 'Ads Manager' && window.AdsManagerUI) {
     window.AdsManagerUI.render(root, { api, el, add, button, badge, notice, paragraph });
     return;
+  }
+
+  if (window.PlatformStudioUI) {
+    const studioHelpers = {
+      api, el, add, button, badge, notice, paragraph, edit, field,
+      onRefreshState: refresh,
+      onSelectForAudience: (prod) => {
+        pendingAudienceProduct = prod;
+        section = 'Target Audience & ICP';
+        render();
+      },
+      onOpenAdsManager: () => {
+        section = 'Ads Manager';
+        render();
+      }
+    };
+    if (section === 'Product Catalog & Offers') {
+      window.PlatformStudioUI.renderProductCatalog(root, studioHelpers);
+      return;
+    }
+    if (section === 'Target Audience & ICP') {
+      window.PlatformStudioUI.renderAudienceAnalyzer(root, studioHelpers, pendingAudienceProduct);
+      return;
+    }
+    if (section === 'AI & CRM Connectors') {
+      window.PlatformStudioUI.renderConnectors(root, studioHelpers);
+      return;
+    }
+    if (section === 'Telephony & Script Studio') {
+      window.PlatformStudioUI.renderTelephonyAndScript(root, studioHelpers);
+      return;
+    }
   }
 
   /* ------------------------------------------------------------------

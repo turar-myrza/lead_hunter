@@ -14,10 +14,11 @@ from app.models.ads_manager import AudienceIn, CampaignIn, KATO_MAP, QueueIn, To
 from app.services.ads_manager import AdsManager, ALMATY_TZ, is_dial_window
 from app.services.ads_store import AdsStore
 from app.services.catalog import CATALOG
+from app.services.platform_store import PlatformStore
 from app.services.sales_store import SalesStore, now
 from version import VERSION as APP_VERSION
 
-VERSION = "1.7.1"
+VERSION = "2.0.0"
 
 router = APIRouter(prefix="/platform/api/ads", tags=["Ads manager"])
 
@@ -60,9 +61,13 @@ def get_meta(mgr: AdsManager = Depends(ads_service)):
         except json.JSONDecodeError:
             source_status = {}
     today_prefix = now().astimezone(ALMATY_TZ).date().isoformat()
+    pstore = PlatformStore(mgr.store.base)
+    dyn_catalog = [
+        {**p, "id": p["slug"]} for p in pstore.list_products()
+    ] or CATALOG
     return {
         "version": APP_VERSION,
-        "catalog": CATALOG,
+        "catalog": dyn_catalog,
         "regions": [
             {"id": "all", "label": "All KZ"},
             {"id": "almaty", "label": "Almaty", "kato": KATO_MAP["almaty"]},

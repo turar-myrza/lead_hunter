@@ -21,7 +21,7 @@ from app.services.catalog import catalog_service_label, resolve_catalog_item
 from app.services.control_store import ControlStore
 from app.services.sales_store import SalesStore, now
 
-VERSION = "1.7.1"
+VERSION = "2.0.0"
 
 ALMATY_TZ = ZoneInfo("Asia/Almaty")
 MOBILE_PREFIX_RE = re.compile(r"^\+7(?:70\d|747|75\d|76\d|77[15678]|78\d)")
@@ -524,10 +524,27 @@ class AdsManager:
             item = resolve_catalog_item(lead["product_key"])
             self._offer_fn(phone, item, lang, self.settings, None)
 
+        from app.services.platform_store import PlatformStore
+        pstore = PlatformStore(self.store.base)
+        company = pstore.get_company_profile()
+        telephony = pstore.get_telephony_config()
+        prod_record = pstore.get_product(lead["product_key"])
+        prod_details = ""
+        if prod_record:
+            prod_details = f"{prod_record.get('price_range', '')} {prod_record.get('specs', '')}".strip()
+
         res = self._call_pbx(
             phone=phone,
             products=[lead["service"] or catalog_service_label(lead["product_key"], lang)],
+            details=prod_details,
+            ceo=lead.get("director") or "",
+            biz=lead.get("company") or "",
             lang=lang,
+            greeting=(telephony.get("custom_greeting_kz") if lang == "kz" else telephony.get("custom_greeting_ru")) or "",
+            seller=company.get("company_name") or "",
+            voice=telephony.get("voice_name") or "Kore",
+            custom_prompt=(telephony.get("custom_prompt_kz") if lang == "kz" else telephony.get("custom_prompt_ru")) or "",
+            transfer_target=telephony.get("transfer_extension") or "055",
             host=self.settings.telephony_host,
             user=self.settings.telephony_ssh_user,
             remote_script=self.settings.telephony_caller_script,

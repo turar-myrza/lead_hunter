@@ -15,7 +15,7 @@ import subprocess
 import shlex
 from typing import List, Optional, Dict, Any
 
-VERSION = "1.6.0"
+VERSION = "2.0.0"
 
 DEFAULT_TELEPHONY_HOST = os.getenv("TELEPHONY_HOST", "185.22.64.70")
 DEFAULT_SSH_USER = os.getenv("TELEPHONY_SSH_USER", "debian")
@@ -31,6 +31,10 @@ def call_lead(
     biz: str = "",
     lang: str = "kz",
     greeting: str = "",
+    seller: str = "",
+    voice: str = "",
+    custom_prompt: str = "",
+    transfer_target: str = "",
     host: Optional[str] = None,
     user: Optional[str] = None,
     remote_script: Optional[str] = None,
@@ -52,6 +56,14 @@ def call_lead(
         args.extend(["--biz", biz])
     if greeting:
         args.extend(["--greeting", greeting])
+    if seller:
+        args.extend(["--seller", seller])
+    if voice:
+        args.extend(["--voice", voice])
+    if custom_prompt:
+        args.extend(["--prompt", custom_prompt])
+    if transfer_target:
+        args.extend(["--transfer", transfer_target])
 
     if is_local:
         cmd = [sys.executable, DEFAULT_REMOTE_SCRIPT] + args

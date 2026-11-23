@@ -7,6 +7,7 @@ from app.api.deals import router as deals_router
 from app.api.open_channels import router as open_channels_router
 from app.api.control_center import router as control_center_router
 from app.api.ads_manager import router as ads_manager_router
+from app.api.platform_studio import router as platform_studio_router
 from app.api.universal_lead_hunter import router as lead_hunter_router
 from app.core.config import get_settings
 from version import VERSION
@@ -27,6 +28,7 @@ app.include_router(lead_hunter_router)
 app.include_router(open_channels_router)
 app.include_router(control_center_router)
 app.include_router(ads_manager_router)
+app.include_router(platform_studio_router)
 
 
 @app.middleware('http')
