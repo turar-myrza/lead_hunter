@@ -68,7 +68,13 @@ async function api(path, method = 'GET', data) {
     },
     body: data === undefined ? undefined : JSON.stringify(data)
   });
-  const body = await r.json();
+  let body;
+  const rawText = await r.text();
+  try {
+    body = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    body = { detail: rawText || `HTTP ${r.status}` };
+  }
   if (!r.ok) {
     if (r.status === 401) {
       $('shell').hidden = true;

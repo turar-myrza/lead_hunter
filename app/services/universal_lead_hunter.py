@@ -81,7 +81,12 @@ class LeadHunterApplication:
         if run is None or run['status'] not in {'completed', 'partial'}:
             return None
         saved = self.store.step(run_id, 'finished', 'result')
-        return RunResult.model_validate(saved) if saved else None
+        if not saved:
+            return None
+        try:
+            return RunResult.model_validate(saved)
+        except Exception:
+            return None
 
     def artifact(self, run_id: int, name: str) -> Path | None:
         result = self.result(run_id)

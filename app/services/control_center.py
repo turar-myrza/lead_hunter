@@ -83,9 +83,13 @@ class ControlCenter:
         for job in data['jobs']:
             rid=(job.get('result') or {}).get('run_id')
             if rid:
-                status=app.status(rid);result=app.result(rid)
-                job['workflow']=status.model_dump(mode='json') if status else None
-                job['opportunities']=result.model_dump(mode='json')['opportunities'] if result else []
+                try:
+                    status=app.status(rid);result=app.result(rid)
+                    job['workflow']=status.model_dump(mode='json') if status else None
+                    job['opportunities']=result.model_dump(mode='json')['opportunities'] if result else []
+                except Exception:
+                    job['workflow']=None
+                    job['opportunities']=[]
         return data
 
     async def process(self, job):

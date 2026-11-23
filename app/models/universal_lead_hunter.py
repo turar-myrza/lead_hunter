@@ -41,7 +41,7 @@ class BuyerPath(Record):
 
 class Evidence(Record):
     id: Key
-    kind: Literal['identity', 'need', 'role', 'business_contact', 'inbound_request', 'opt_in', 'opt_out']
+    kind: Literal['identity', 'need', 'role', 'business_contact', 'inbound_request', 'opt_in', 'opt_out', 'market_signal']
     excerpt: Description
     url: HttpUrl | None = None
     observed_at: AwareDatetime | None = None
@@ -59,6 +59,7 @@ class Candidate(Record):
     roles: list[BuyerRole] = Field(default_factory=list, max_length=18)
     industry: str | None = Field(default=None, max_length=1200)
     location: str | None = Field(default=None, max_length=1200)
+    subject_kind: str | None = Field(default=None, max_length=120)
 
     @model_validator(mode='after')
     def validate_citations(self):
