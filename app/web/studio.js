@@ -1,11 +1,12 @@
 'use strict';
 
 /* =========================================================================
-   Lead Hunter Platform Studio UI (v2.3.0)
+   Lead Hunter Platform Studio UI (v2.4.0)
    - Declarative Component Mounts (Zero DOM duplication on Grid/List toggle)
    - LiteLLM Unified Router & Tier Connectors (Research, Reasoning, Test, Local)
    - Real-Time Model Ping (Latency, Token Count, Estimated Cost)
-   - Prompt-to-Product Catalog (Grid/List View, Checkboxes, Inline Edit, CRM Sync)
+   - SSRF-Safe Prompt-to-Product Web Scraper & Pydantic Schema Extractor
+   - Branded Commercial Offer HTML/PDF Preview Generator
    - Prompt-to-Audience AI Client Analyzer (Push to Ads Manager)
    - Telephony Engine, Voice Audio Preview (KZ/RU), Company Profile & Call Script Studio
    ========================================================================= */
@@ -106,6 +107,10 @@ window.PlatformStudioUI = (() => {
     const pInput = el('input');
     pInput.type = 'text';
     pInput.placeholder = 'e.g. High-speed laboratory centrifuge DLAB DM0412 or Bitrix24 CRM Implementation...';
+    const pUrl = el('input');
+    pUrl.type = 'url';
+    pUrl.placeholder = 'Optional URL to scrape (https://...)';
+    pUrl.style.maxWidth = '260px';
     const pLang = el('select');
     add(pLang, el('option', 'RU', ''), el('option', 'KZ', ''));
     pLang.options[0].value = 'ru';
@@ -117,12 +122,17 @@ window.PlatformStudioUI = (() => {
       const q = pInput.value.trim();
       if (q.length < 3) throw Error('Enter at least 3 characters describing the product');
       notice('AI is researching real product specs from the internet...');
-      const r = await api('/studio/products/from-prompt', 'POST', { prompt: q, lang: pLang.value, auto_save: false });
+      const r = await api('/studio/products/from-prompt', 'POST', {
+        prompt: q,
+        url: pUrl.value.trim(),
+        lang: pLang.value,
+        auto_save: false,
+      });
       lastProductDraft = r;
-      notice('Product data researched using ' + (r.model_used || 'AI'));
+      notice(`Product researched using ${r.model_used || 'AI'} (${r.latency_ms || 0}ms)`);
       renderDraft();
     }, 'primary-btn');
-    add(promptRow, pInput, pLang, genBtn);
+    add(promptRow, pInput, pUrl, pLang, genBtn);
     promptBox.append(promptRow, draftContainer);
 
     function renderDraft() {
@@ -137,6 +147,7 @@ window.PlatformStudioUI = (() => {
       const fPrice = el('input'); fPrice.value = d.price_range || '';
       const fModels = el('input'); fModels.value = (d.models || []).join(', ');
       const fSpecs = el('textarea'); fSpecs.value = d.specs || '';
+      const fCerts = el('input'); fCerts.value = d.certifications || '';
       const fUse = el('input'); fUse.value = d.target_use_case || '';
 
       const grid = el('div', undefined, 'studio-form-grid');
@@ -147,6 +158,7 @@ window.PlatformStudioUI = (() => {
         wrap('Category', fCat),
         wrap('Price Range (KZT)', fPrice),
         wrap('Models (comma-separated)', fModels),
+        wrap('Certifications (CE, ISO, GOST)', fCerts),
         wrap('Target Use Case', fUse)
       );
       draftCard.append(grid, wrap('Technical Specifications', fSpecs));
@@ -172,6 +184,7 @@ window.PlatformStudioUI = (() => {
             price_range: fPrice.value.trim(),
             models: fModels.value.split(',').map(x => x.trim()).filter(Boolean),
             specs: fSpecs.value.trim(),
+            certifications: fCerts.value.trim(),
             target_use_case: fUse.value.trim(),
             pdf_kz: d.pdf_kz || '',
             pdf_ru: d.pdf_ru || '',
@@ -279,11 +292,22 @@ window.PlatformStudioUI = (() => {
           if (item.category) c.append(el('div', 'Category: ' + item.category, 'product-meta'));
           if (item.price_range) c.append(el('div', item.price_range, 'product-price'));
           if (item.specs) c.append(el('p', item.specs, 'product-meta'));
+          if (item.certifications) c.append(el('div', '🏅 Certs: ' + item.certifications, 'muted'));
           if (item.models?.length) c.append(el('div', 'Models: ' + item.models.join(' · '), 'muted'));
 
           const acts = el('div', undefined, 'actions');
           add(acts,
             button('Edit', async () => openProductModal(item, h, () => renderProductCatalog(root, h)), 'secondary-btn'),
+            button('📄 Offer', async () => {
+              const prev = await api(`/studio/products/${item.id}/offer-preview?lang=ru`);
+              const win = window.open('', '_blank', 'width=840,height=720');
+              if (win) {
+                win.document.write(prev.html);
+                win.document.close();
+              } else {
+                notice('Popup blocked — allow popups to preview Commercial Offer');
+              }
+            }, 'secondary-btn'),
             button('🎯 Find Clients', async () => { if (onSelectForAudience) onSelectForAudience(item); }, 'primary-btn'),
             button('Delete', async () => {
               await api('/studio/products/' + item.id, 'DELETE');

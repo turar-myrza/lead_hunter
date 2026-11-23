@@ -9,7 +9,7 @@ from typing import Any, Optional
 from app.services.catalog import CATALOG
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 
 STUDIO_SCHEMA = """
 CREATE TABLE IF NOT EXISTS am_ai_providers(
@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS am_products(
     price_range TEXT NOT NULL DEFAULT '',
     models TEXT NOT NULL DEFAULT '[]',
     specs TEXT NOT NULL DEFAULT '',
+    certifications TEXT NOT NULL DEFAULT '',
     target_use_case TEXT NOT NULL DEFAULT '',
     pdf_kz TEXT NOT NULL DEFAULT '',
     pdf_ru TEXT NOT NULL DEFAULT '',
@@ -119,6 +120,9 @@ class PlatformStore:
         self.base = base
         with base.connect() as db:
             db.executescript(STUDIO_SCHEMA)
+            cols = {r["name"] for r in db.execute("PRAGMA table_info(am_products)").fetchall()}
+            if "certifications" not in cols:
+                db.execute("ALTER TABLE am_products ADD COLUMN certifications TEXT NOT NULL DEFAULT ''")
         self._seed_default_products()
 
     def _seed_default_products(self) -> None:
@@ -350,17 +354,18 @@ class PlatformStore:
                     """
                     INSERT INTO am_products(
                         slug, name, name_ru, category, price_range, models, specs,
-                        target_use_case, pdf_kz, pdf_ru, source, created, updated
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        certifications, target_use_case, pdf_kz, pdf_ru, source, created, updated
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         slug,
                         name,
                         name_ru,
                         (data.get("category") or "").strip(),
-                        (data.get("price_range") or "").strip(),
+                        (data.get("price_range") or data.get("price_range_kzt") or "").strip(),
                         models_json,
                         (data.get("specs") or "").strip(),
+                        (data.get("certifications") or "").strip(),
                         (data.get("target_use_case") or "").strip(),
                         (data.get("pdf_kz") or "").strip(),
                         (data.get("pdf_ru") or "").strip(),
@@ -374,16 +379,17 @@ class PlatformStore:
                     """
                     UPDATE am_products
                     SET name=?, name_ru=?, category=?, price_range=?, models=?, specs=?,
-                        target_use_case=?, pdf_kz=?, pdf_ru=?, updated=?
+                        certifications=?, target_use_case=?, pdf_kz=?, pdf_ru=?, updated=?
                     WHERE id=?
                     """,
                     (
                         name,
                         name_ru,
                         (data.get("category") or "").strip(),
-                        (data.get("price_range") or "").strip(),
+                        (data.get("price_range") or data.get("price_range_kzt") or "").strip(),
                         models_json,
                         (data.get("specs") or "").strip(),
+                        (data.get("certifications") or "").strip(),
                         (data.get("target_use_case") or "").strip(),
                         (data.get("pdf_kz") or "").strip(),
                         (data.get("pdf_ru") or "").strip(),

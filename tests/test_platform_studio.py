@@ -397,3 +397,131 @@ async def test_zero_token_leakage_in_errors_and_tracebacks(tmp_path):
     assert "••••" in err_str
 
 
+@pytest.mark.asyncio
+async def test_ssrf_prevention_blocks_private_and_metadata_urls(tmp_path):
+    from app.services.web_scraper import SSRFBlockedError, validate_public_url
+
+    blocked_targets = [
+        "http://127.0.0.1:8088/platform",
+        "http://localhost/admin",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://10.0.0.5/internal",
+        "http://192.168.1.1/router",
+        "file:///etc/passwd",
+        "ftp://example.com/file",
+    ]
+    for target in blocked_targets:
+        with pytest.raises(SSRFBlockedError):
+            validate_public_url(target, resolve_dns=False)
+
+    # Also test API endpoint rejects SSRF URL with HTTP 400
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    pstore = PlatformStore(base)
+    AdsStore(base)
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[studio_store] = lambda: pstore
+    app.dependency_overrides[studio_ai] = lambda: AIEngine(pstore, settings)
+    app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+    try:
+        with TestClient(app) as client:
+            h = {"X-Control-Request": "1"}
+            client.post("/platform/api/login", json={"password": "studio-test-secret"}, headers=h)
+            resp = client.post(
+                "/platform/api/studio/products/from-prompt",
+                json={"prompt": "Test product", "url": "http://169.254.169.254/latest/meta-data/"},
+                headers=h,
+            )
+            assert resp.status_code == 400
+            assert "ssrf_blocked" in resp.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_html_to_markdown_and_prompt_url_scraping(tmp_path):
+    from app.services.web_scraper import html_to_markdown
+
+    sample_html = """
+    <html>
+      <head><title>DLAB DM0412 Lab Centrifuge</title></head>
+      <body>
+        <nav>Skip Navigation</nav>
+        <script>alert('ignore me');</script>
+        <h1>DLAB DM0412 Clinical Centrifuge</h1>
+        <p>Price: 285 000 KZT in Almaty</p>
+        <table><tr><th>Max Speed</th><td>4500 RPM</td></tr><tr><th>Certs</th><td>CE, ISO 13485</td></tr></table>
+      </body>
+    </html>
+    """
+    md = html_to_markdown(sample_html)
+    assert "DLAB DM0412 Clinical Centrifuge" in md["markdown"]
+    assert "alert('ignore me')" not in md["markdown"]
+    assert "Skip Navigation" not in md["markdown"]
+    assert "| Max Speed | 4500 RPM |" in md["markdown"]
+
+    store = PlatformStore(SalesStore(tmp_path / "scrape.sqlite3"))
+    settings = _make_settings(tmp_path)
+
+    def scrape_and_ai_mock(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "shop.example.kz" in url:
+            return httpx.Response(200, text=sample_html)
+        # Gemini endpoint
+        body = request.content.decode("utf-8", errors="ignore")
+        assert "4500 RPM" in body  # Scraped markdown was injected into AI context
+        payload = {
+            "name_kz": "DLAB DM0412 Клиникалық центрифуга",
+            "name_ru": "Клиническая центрифуга DLAB DM0412",
+            "category": "Медициналық жабдықтар",
+            "price_range_kzt": "285 000 ₸",
+            "models": ["DM0412"],
+            "specs": "4500 RPM, 12x15ml rotor",
+            "certifications": "CE, ISO 13485",
+            "target_use_case": "Diagnostic labs and clinics",
+        }
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps(payload)}]}}]})
+
+    ai = AIEngine(store, settings, transport=httpx.MockTransport(scrape_and_ai_mock))
+    result = await ai.research_product_from_prompt(
+        prompt="Research this centrifuge",
+        url="https://shop.example.kz/dlab-dm0412",
+    )
+    assert result["name_kz"] == "DLAB DM0412 Клиникалық центрифуга"
+    assert result["price_range_kzt"] == "285 000 ₸"
+    assert result["certifications"] == "CE, ISO 13485"
+    assert result["scraped_url"] == "https://shop.example.kz/dlab-dm0412"
+
+
+def test_product_offer_preview_xss_and_branding(tmp_path):
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    pstore = PlatformStore(base)
+    AdsStore(base)
+    p = pstore.save_product({
+        "name": "Centrifuge X1",
+        "name_ru": "Центрифуга X1",
+        "price_range": "320 000 ₸",
+        "specs": "<script>alert('xss')</script> 4500 RPM",
+        "certifications": "CE, ISO 13485, GOST",
+        "models": ["X1-Pro"],
+    })
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[studio_store] = lambda: pstore
+    app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+    try:
+        with TestClient(app) as client:
+            h = {"X-Control-Request": "1"}
+            client.post("/platform/api/login", json={"password": "studio-test-secret"}, headers=h)
+            res = client.get(f"/platform/api/studio/products/{p['id']}/offer-preview?lang=ru", headers=h)
+            assert res.status_code == 200
+            html = res.json()["html"]
+            assert "КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ" in html
+            assert "CE, ISO 13485, GOST" in html
+            assert "<script>alert" not in html
+            assert "&lt;script&gt;" in html
+    finally:
+        app.dependency_overrides.clear()
+
+
+

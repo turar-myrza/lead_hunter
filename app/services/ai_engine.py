@@ -9,12 +9,27 @@ import time
 from typing import Any, Optional
 
 import httpx
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import Settings
 from app.services.platform_store import PlatformStore
+from app.services.web_scraper import SSRFBlockedError, fetch_url_markdown
 
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 logger = logging.getLogger("lead_hunter.ai_engine")
+
+
+class ProductResearchSchema(BaseModel):
+    """Strict Pydantic v2 schema for structured product extraction."""
+
+    name_kz: str = Field(min_length=2, max_length=200)
+    name_ru: str = Field(min_length=2, max_length=200)
+    category: str = Field(default="B2B Equipment", max_length=200)
+    price_range_kzt: str = Field(default="", max_length=120)
+    models: list[str] = Field(default_factory=list, max_length=15)
+    specs: str = Field(default="", max_length=2000)
+    certifications: str = Field(default="", max_length=500)
+    target_use_case: str = Field(default="", max_length=1000)
 
 
 class AIEngineError(ValueError):
@@ -388,34 +403,85 @@ class AIEngine:
             "reply": (res["text"] or "").strip()[:80],
         }
 
-    async def research_product_from_prompt(self, prompt: str, lang: str = "ru") -> dict:
+    async def research_product_from_prompt(self, prompt: str, lang: str = "ru", url: str = "") -> dict:
+        scraped_context = ""
+        scraped_url = ""
+        target_url = (url or "").strip()
+        if not target_url:
+            m = re.search(r"https?://[^\s<>\"']+", prompt or "")
+            if m:
+                target_url = m.group(0)
+
+        if target_url:
+            try:
+                scraped = await fetch_url_markdown(
+                    target_url,
+                    transport=self.transport,
+                    resolve_dns=self.transport is None,
+                )
+                scraped_url = scraped.get("url", target_url)
+                scraped_context = (
+                    f"\n\n--- SCRAPED PRODUCT PAGE MARKDOWN ({scraped_url}) ---\n"
+                    f"{scraped.get('markdown', '')[:8000]}\n--- END SCRAPED PAGE ---"
+                )
+            except SSRFBlockedError:
+                raise
+            except Exception as scrape_err:
+                logger.warning("Optional URL scrape skipped (%s): %s", target_url, scrape_err)
+
         system = (
             "You are a B2B commercial product researcher for Kazakhstan and CIS markets. "
-            "Given a user prompt describing a product or service, research real market data, technical specifications, "
-            "popular models/variants, and realistic price ranges in KZT (₸). "
-            "Return ONLY a valid JSON object with exact keys: "
-            '{"name": "Kazakh product title", "name_ru": "Russian product title", "category": "Market category", '
-            '"price_range": "Realistic KZT range e.g. 250 000 – 950 000 ₸", '
+            "Given a user prompt (and optional scraped page markdown), extract real market data, technical specifications, "
+            "certifications (CE, ISO, GOST, EAEU), popular models/variants, and realistic price ranges in KZT (₸). "
+            "Return ONLY a valid JSON object matching this exact Pydantic schema: "
+            '{"name_kz": "Kazakh product title", "name_ru": "Russian product title", "category": "Market category", '
+            '"price_range_kzt": "Realistic KZT range e.g. 250 000 – 950 000 ₸", '
             '"models": ["Model 1", "Model 2", "Model 3"], '
-            '"specs": "Concise real technical specifications, certifications, warranty (2-3 sentences)", '
+            '"specs": "Concise real technical specifications and warranty (2-3 sentences)", '
+            '"certifications": "CE, ISO 13485, GOST, or warranty/compliance standards", '
             '"target_use_case": "Who uses this product and why (1-2 sentences)"}. '
             "Never output markdown fences or commentary outside JSON."
         )
         res = await self.complete(
             system_prompt=system,
-            user_prompt=f"Product/Service prompt: {prompt.strip()}\nPreferred detail language: {lang}",
+            user_prompt=f"Product/Service prompt: {prompt.strip()}\nPreferred detail language: {lang}{scraped_context}",
             purpose="web_research",
-            use_web_search=True,
+            use_web_search=not bool(scraped_context),
             expect_json=True,
         )
-        data = res["data"]
-        if not isinstance(data, dict) or not data.get("name"):
+        raw = res["data"]
+        if not isinstance(raw, dict):
             raise AIEngineError("invalid_product_research_payload")
-        data["sources"] = res.get("sources", [])
-        data["model_used"] = f"{res['provider']}:{res['model']}"
-        data["latency_ms"] = res.get("latency_ms", 0)
-        data["cost_usd"] = res.get("estimated_cost_usd", 0.0)
-        return data
+
+        # Normalize aliases so both legacy and strict Pydantic schema keys validate cleanly
+        normalized = {
+            "name_kz": raw.get("name_kz") or raw.get("name") or "",
+            "name_ru": raw.get("name_ru") or raw.get("name_kz") or raw.get("name") or "",
+            "category": raw.get("category") or "B2B Equipment",
+            "price_range_kzt": raw.get("price_range_kzt") or raw.get("price_range") or "",
+            "models": raw.get("models") if isinstance(raw.get("models"), list) else [],
+            "specs": raw.get("specs") or "",
+            "certifications": raw.get("certifications") or "",
+            "target_use_case": raw.get("target_use_case") or "",
+        }
+        try:
+            validated = ProductResearchSchema.model_validate(normalized)
+        except ValidationError as exc:
+            raise AIEngineError(f"product_schema_validation_error: {exc}") from None
+
+        out = validated.model_dump()
+        # Keep backward-compatible aliases alongside strict fields
+        out["name"] = out["name_kz"]
+        out["price_range"] = out["price_range_kzt"]
+        sources = res.get("sources", [])
+        if scraped_url:
+            sources = [{"title": "Scraped Product Page", "uri": scraped_url}] + list(sources)
+        out["sources"] = sources
+        out["scraped_url"] = scraped_url
+        out["model_used"] = f"{res['provider']}:{res['model']}"
+        out["latency_ms"] = res.get("latency_ms", 0)
+        out["cost_usd"] = res.get("estimated_cost_usd", 0.0)
+        return out
 
     async def analyze_audiences_from_prompt(self, prompt: str, product: Optional[dict] = None) -> dict:
         product_ctx = ""

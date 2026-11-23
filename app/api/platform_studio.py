@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import html as html_lib
 from typing import Any, Optional
 
 import httpx
@@ -15,8 +16,9 @@ from app.services.ads_store import AdsStore
 from app.services.ai_engine import AIEngine, AIEngineError, build_call_script_preview
 from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
+from app.services.web_scraper import SSRFBlockedError
 
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 
 router = APIRouter(prefix="/platform/api/studio", tags=["Platform Studio"])
 
@@ -51,6 +53,7 @@ class ProductIn(BaseModel):
     price_range: str = Field(default="", max_length=120)
     models: list[str] = Field(default_factory=list)
     specs: str = Field(default="", max_length=2000)
+    certifications: str = Field(default="", max_length=500)
     target_use_case: str = Field(default="", max_length=1000)
     pdf_kz: str = Field(default="", max_length=500)
     pdf_ru: str = Field(default="", max_length=500)
@@ -59,6 +62,7 @@ class ProductIn(BaseModel):
 
 class ProductPromptIn(BaseModel):
     prompt: str = Field(min_length=3, max_length=1500)
+    url: str = Field(default="", max_length=500)
     lang: str = Field(default="ru", pattern=r"^(kz|ru)$")
     auto_save: bool = False
 
@@ -209,7 +213,9 @@ async def product_from_prompt(
     ai: AIEngine = Depends(studio_ai),
 ):
     try:
-        researched = await ai.research_product_from_prompt(data.prompt, lang=data.lang)
+        researched = await ai.research_product_from_prompt(data.prompt, lang=data.lang, url=data.url)
+    except SSRFBlockedError as exc:
+        raise HTTPException(400, f"ssrf_blocked: {exc}") from None
     except AIEngineError as exc:
         raise HTTPException(502, str(exc)) from None
     except httpx.HTTPError as exc:
@@ -217,12 +223,13 @@ async def product_from_prompt(
 
     company = store.get_company_profile()
     draft = {
-        "name": researched.get("name") or data.prompt[:80],
+        "name": researched.get("name_kz") or researched.get("name") or data.prompt[:80],
         "name_ru": researched.get("name_ru") or researched.get("name") or data.prompt[:80],
         "category": researched.get("category") or "",
-        "price_range": researched.get("price_range") or "",
+        "price_range": researched.get("price_range_kzt") or researched.get("price_range") or "",
         "models": researched.get("models") if isinstance(researched.get("models"), list) else [],
         "specs": researched.get("specs") or "",
+        "certifications": researched.get("certifications") or "",
         "target_use_case": researched.get("target_use_case") or "",
         "pdf_kz": company.get("default_pdf_kz", ""),
         "pdf_ru": company.get("default_pdf_ru", ""),
@@ -233,7 +240,66 @@ async def product_from_prompt(
         "draft": draft,
         "saved": saved,
         "sources": researched.get("sources", []),
+        "scraped_url": researched.get("scraped_url", ""),
         "model_used": researched.get("model_used", ""),
+        "latency_ms": researched.get("latency_ms", 0),
+        "cost_usd": researched.get("cost_usd", 0.0),
+    }
+
+
+@router.get("/products/{product_id}/offer-preview", dependencies=[Depends(auth)])
+def product_offer_preview(product_id: int, lang: str = "ru", store: PlatformStore = Depends(studio_store)):
+    prod = store.get_product(str(product_id))
+    if not prod:
+        raise HTTPException(404, "product_not_found")
+    comp = store.get_company_profile()
+    is_kz = (lang or "ru").lower() == "kz"
+    e = html_lib.escape
+
+    title = e(prod.get("name") if is_kz else (prod.get("name_ru") or prod.get("name") or ""))
+    company_name = e(comp.get("company_name") or "ТОО «CRM Consulting»")
+    bin_num = e(comp.get("bin") or "")
+    city = e(comp.get("city") or "Алматы")
+    website = e(comp.get("website") or "")
+    mgr_name = e(comp.get("manager_name") or "")
+    mgr_phone = e(comp.get("manager_phone") or "")
+    price = e(prod.get("price_range") or "По запросу / Сұраныс бойынша")
+    specs = e(prod.get("specs") or "")
+    certs = e(prod.get("certifications") or "CE / ISO / ЕАЭС")
+    models_html = "".join(f"<li>{e(str(m))}</li>" for m in (prod.get("models") or []))
+
+    heading = "КОММЕРЦИЯЛЫҚ ҰСЫНЫС" if is_kz else "КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ"
+    lbl_price = "Бағасы" if is_kz else "Стоимость"
+    lbl_specs = "Техникалық сипаттамасы" if is_kz else "Технические характеристики"
+    lbl_certs = "Сертификаттар" if is_kz else "Сертификация"
+    lbl_models = "Қолжетімді модельдер" if is_kz else "Доступные модели"
+    lbl_contact = "Байланыс менеджері" if is_kz else "Контактный менеджер"
+
+    html_doc = f"""<!doctype html>
+<html lang="{e(lang)}">
+<head><meta charset="utf-8"><title>{heading} — {title}</title></head>
+<body style="font-family:Arial,sans-serif;max-width:760px;margin:24px auto;color:#111827;line-height:1.5;">
+  <div style="border-bottom:3px solid #0284c7;padding-bottom:12px;margin-bottom:20px;">
+    <h2 style="margin:0;color:#0284c7;">{company_name}</h2>
+    <div style="font-size:13px;color:#4b5563;">БИН: {bin_num} · {city} · {website}</div>
+  </div>
+  <h1 style="font-size:20px;margin:0 0 8px 0;">{heading}</h1>
+  <h2 style="font-size:18px;color:#0f172a;margin:0 0 16px 0;">{title}</h2>
+  <p><strong>{lbl_price}:</strong> {price}</p>
+  <p><strong>{lbl_specs}:</strong> {specs}</p>
+  <p><strong>{lbl_certs}:</strong> {certs}</p>
+  {"<p><strong>" + lbl_models + ":</strong></p><ul>" + models_html + "</ul>" if models_html else ""}
+  <div style="margin-top:28px;padding-top:12px;border-top:1px solid #d1d5db;font-size:14px;">
+    <strong>{lbl_contact}:</strong> {mgr_name} · {mgr_phone}
+  </div>
+</body>
+</html>"""
+    return {
+        "product_id": prod["id"],
+        "lang": "kz" if is_kz else "ru",
+        "title": prod.get("name") if is_kz else (prod.get("name_ru") or prod.get("name")),
+        "company_name": comp.get("company_name"),
+        "html": html_doc,
     }
 
 
