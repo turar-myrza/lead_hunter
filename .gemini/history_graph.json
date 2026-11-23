@@ -82,5 +82,12 @@
     "result_summary": "1) Integrated multi-provider router supporting model tiers (research_tier, reasoning_tier, test_tier) in app/services/ai_engine.py; 2) Implemented automatic rate-limit fallback routing: seamless failover across candidates upon HTTP 429 or 5xx; 3) Created durable am_ai_usage table tracking prompt/completion tokens, latency, and estimated USD/KZT costs; 4) Added /platform/api/studio/connectors/models/{id}/ping and /platform/api/studio/ai-usage endpoints with live telemetry banner in UI; 5) Enforced zero-plain-text key leakage in errors and client tracebacks; 6) Bumped VERSION to 2.3.0 across 10 modules, verified 24/24 pytest tests pass, and deployed live to whatflow.",
     "parent": "node-2.2.0-step-1-declarative-frontend-rebuild",
     "timestamp": "2026-11-23T12:55:00+05:00"
+  },
+  {
+    "id": "node-2.4.0-step-3-prompt-to-product-scraper-and-pydantic",
+    "prompt_summary": "Step 3 of autonomous B2B sales pipeline plan: Prompt-to-Product Web Research Engine (SSRF-safe HTML-to-Markdown scraper, strict Pydantic v2 ProductResearchSchema, branded Offer Preview, 27/27 tests passing, deployed to whatflow)",
+    "result_summary": "1) Created SSRF-safe web_scraper.py blocking private/loopback/metadata IPs, unsafe schemes, and malicious redirects while converting HTML pages to clean Markdown via BeautifulSoup4 + lxml; 2) Added strict Pydantic v2 ProductResearchSchema validation (name_kz, name_ru, category, price_range_kzt, models, specs, certifications, target_use_case) in ai_engine.py; 3) Added certifications column migration to PlatformStore; 4) Built XSS-safe Commercial Offer HTML/PDF preview endpoint (/products/{id}/offer-preview) and UI preview button; 5) Bumped VERSION to 2.4.0, passed all 27 pytest tests (catching and fixing an SSRF ValueError inheritance edge case), and deployed live to whatflow.",
+    "parent": "node-2.3.0-step-2-ai-model-router-and-token-connectors",
+    "timestamp": "2026-11-23T13:05:00+05:00"
   }
 ]
