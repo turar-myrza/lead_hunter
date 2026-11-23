@@ -1,11 +1,12 @@
 'use strict';
 
 /* =========================================================================
-   Lead Hunter Platform Studio UI (v2.2.0)
+   Lead Hunter Platform Studio UI (v2.3.0)
    - Declarative Component Mounts (Zero DOM duplication on Grid/List toggle)
+   - LiteLLM Unified Router & Tier Connectors (Research, Reasoning, Test, Local)
+   - Real-Time Model Ping (Latency, Token Count, Estimated Cost)
    - Prompt-to-Product Catalog (Grid/List View, Checkboxes, Inline Edit, CRM Sync)
    - Prompt-to-Audience AI Client Analyzer (Push to Ads Manager)
-   - AI Model & Token Connectors (LiteLLM / Gemini, OpenAI, DeepSeek, Local Ollama/vLLM)
    - Telephony Engine, Voice Audio Preview (KZ/RU), Company Profile & Call Script Studio
    ========================================================================= */
 
@@ -505,18 +506,44 @@ window.PlatformStudioUI = (() => {
     // Strict clean mount
     root.replaceChildren();
 
-    paragraph(root, 'Configure API access tokens for proprietary LLMs (Gemini, OpenAI, DeepSeek, Anthropic) or self-hosted local models (Ollama, vLLM, LM Studio), plus CRM/ERP product connectors.', 'lead');
+    paragraph(root, 'Configure API access tokens for proprietary LLMs (Gemini, OpenAI, DeepSeek, Anthropic) or self-hosted local models (Ollama, vLLM, LM Studio) with automatic rate-limit fallback and live cost tracking.', 'lead');
 
     let envInfo = {};
+    let usageInfo = {};
     try {
-      const [mRes, sRes] = await Promise.all([api('/studio/connectors/models'), api('/studio/settings')]);
+      const [mRes, sRes, uRes] = await Promise.all([
+        api('/studio/connectors/models'),
+        api('/studio/settings'),
+        api('/studio/ai-usage').catch(() => ({ total_calls: 0, total_tokens: 0, estimated_cost_usd: 0, avg_latency_ms: 0 })),
+      ]);
       aiProviders = mRes.items || [];
       envInfo = mRes;
       studioSettings = sRes;
+      usageInfo = uRes || {};
     } catch (e) {
       root.append(el('p', 'Failed to load connectors: ' + e.message, 'muted'));
       return;
     }
+
+    // Telemetry & Spend Banner
+    const teleCard = el('div', undefined, 'card studio-highlight');
+    teleCard.append(el('h3', '📊 AI Router Telemetry & Token Spend'));
+    const tGrid = el('div', undefined, 'studio-summary-bar');
+    const metric = (lbl, val, sub) => {
+      const b = el('div', undefined, 'studio-stat-box');
+      b.append(el('span', lbl, 'muted'));
+      b.append(el('strong', val, 'stat-number'));
+      if (sub) b.append(el('small', sub, 'muted'));
+      return b;
+    };
+    add(tGrid,
+      metric('Total AI Invocations', String(usageInfo.total_calls || 0)),
+      metric('Total Tokens Processed', (usageInfo.total_tokens || 0).toLocaleString(), `${(usageInfo.prompt_tokens || 0).toLocaleString()} in / ${(usageInfo.completion_tokens || 0).toLocaleString()} out`),
+      metric('Estimated Total Spend', `$${(usageInfo.estimated_cost_usd || 0).toFixed(4)}`, `≈ ${(usageInfo.estimated_cost_kzt || 0).toFixed(2)} ₸`),
+      metric('Average Latency', `${usageInfo.avg_latency_ms || 0} ms`, 'across active providers')
+    );
+    teleCard.append(tGrid);
+    root.append(teleCard);
 
     // Section A: AI Model & Token Connectors
     const aiCard = el('div', undefined, 'card');
@@ -546,11 +573,18 @@ window.PlatformStudioUI = (() => {
         const tr = el('tr');
         const tdActs = el('td');
         const acts = el('div', undefined, 'actions');
+        const pingStatus = el('span', '', 'muted');
         add(acts,
-          button('⚡ Test', async () => {
-            notice(`Testing ${p.name}...`);
-            const r = await api(`/studio/connectors/models/${p.id}/test`, 'POST');
-            notice(`OK (${r.latency_ms}ms): ${r.reply}`);
+          button('⚡ Ping', async () => {
+            pingStatus.textContent = '⏳ Pinging...';
+            try {
+              const r = await api(`/studio/connectors/models/${p.id}/ping`, 'POST');
+              pingStatus.textContent = `🟢 ${r.latency_ms}ms · ${r.prompt_tokens + r.completion_tokens} tok · $${r.cost_usd.toFixed(5)}`;
+              notice(`Ping OK (${r.latency_ms}ms): ${r.reply}`);
+            } catch (err) {
+              pingStatus.textContent = '🔴 ' + err.message;
+              notice('Ping failed: ' + err.message);
+            }
           }, 'primary-btn'),
           button('Edit', async () => openProviderModal(p, h, () => renderConnectors(root, h)), 'secondary-btn'),
           button('Delete', async () => {
@@ -559,7 +593,7 @@ window.PlatformStudioUI = (() => {
             renderConnectors(root, h);
           }, 'secondary-btn')
         );
-        tdActs.append(acts);
+        tdActs.append(acts, pingStatus);
         add(tr,
           el('td', p.name),
           el('td', p.provider.toUpperCase()),
@@ -648,9 +682,10 @@ window.PlatformStudioUI = (() => {
       const pSel = el('select');
       pSel.name = 'purpose';
       for (const [val, txt] of [
-        ['all', 'All Operations (Default)'],
-        ['web_research', 'Product Web Research'],
-        ['audience_generation', 'Audience & ICP Analysis'],
+        ['all', 'All Operations / Universal Fallback'],
+        ['research_tier', 'Research Tier (Gemini Search Grounding / Web Scraping)'],
+        ['reasoning_tier', 'Reasoning Tier (DeepSeek / Gemini Pro / Audience ICP)'],
+        ['test_tier', 'Test Tier (Flash-Lite / Ollama / Low Token Cost)'],
         ['voice_scripting', 'Voice Call Script Generation'],
       ]) {
         const o = el('option', txt); o.value = val;

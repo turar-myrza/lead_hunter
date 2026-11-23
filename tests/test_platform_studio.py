@@ -202,3 +202,198 @@ def test_xss_escaping_in_script_preview():
     assert "alert" in preview["greeting"]
     assert preview["seller_company"] == "<script>alert('xss')</script> B2B Org"
 
+
+def test_ai_model_tiers_and_provider_routing(tmp_path):
+    store = PlatformStore(SalesStore(tmp_path / "tiers.sqlite3"))
+    store.save_ai_provider({
+        "name": "Gemini Search Grounding",
+        "provider": "gemini",
+        "api_key": "gemini-research-key-12345",
+        "base_url": "",
+        "model_name": "gemini-2.5-flash",
+        "purpose": "research_tier",
+        "is_active": True,
+    })
+    store.save_ai_provider({
+        "name": "DeepSeek Reasoner",
+        "provider": "deepseek",
+        "api_key": "deepseek-reasoning-key-12345",
+        "base_url": "",
+        "model_name": "deepseek-reasoner",
+        "purpose": "reasoning_tier",
+        "is_active": True,
+    })
+    store.save_ai_provider({
+        "name": "Local Ollama Test",
+        "provider": "local_openai",
+        "api_key": "",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "model_name": "qwen2.5:0.5b",
+        "purpose": "test_tier",
+        "is_active": True,
+    })
+
+    ai = AIEngine(store, Settings(lead_hunter_api_token="test", lead_hunter_db=tmp_path / "tiers.sqlite3"))
+    
+    # 1. Research tier picks Gemini
+    cands_res = ai.resolve_candidate_providers(purpose="research_tier")
+    assert cands_res[0]["name"] == "Gemini Search Grounding"
+    assert cands_res[0]["model_name"] == "gemini-2.5-flash"
+
+    # 2. Reasoning tier picks DeepSeek
+    cands_reas = ai.resolve_candidate_providers(purpose="reasoning_tier")
+    assert cands_reas[0]["name"] == "DeepSeek Reasoner"
+    assert cands_reas[0]["model_name"] == "deepseek-reasoner"
+
+    # 3. Test tier picks Local Ollama
+    cands_test = ai.resolve_candidate_providers(purpose="test_tier")
+    assert cands_test[0]["name"] == "Local Ollama Test"
+    assert cands_test[0]["model_name"] == "qwen2.5:0.5b"
+
+
+@pytest.mark.asyncio
+async def test_provider_fallback_on_429_rate_limit(tmp_path):
+    store = PlatformStore(SalesStore(tmp_path / "fallback.sqlite3"))
+    store.save_ai_provider({
+        "name": "Primary Provider",
+        "provider": "openai",
+        "api_key": "primary-key-12345678",
+        "base_url": "https://primary.example.com/v1",
+        "model_name": "gpt-4o",
+        "purpose": "all",
+        "is_active": True,
+    })
+    store.save_ai_provider({
+        "name": "Secondary Fallback",
+        "provider": "deepseek",
+        "api_key": "secondary-key-12345678",
+        "base_url": "https://secondary.example.com/v1",
+        "model_name": "deepseek-chat",
+        "purpose": "all",
+        "is_active": True,
+    })
+
+    def fallback_mock(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "primary.example.com" in url:
+            # Primary returns 429 Too Many Requests
+            return httpx.Response(429, json={"error": {"message": "Rate limit reached. Try again later."}})
+        elif "secondary.example.com" in url:
+            # Secondary succeeds
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "{\"fallback_success\": true}"}}],
+                "usage": {"prompt_tokens": 15, "completion_tokens": 8},
+            })
+        return httpx.Response(404)
+
+    ai = AIEngine(
+        store=store,
+        settings=Settings(lead_hunter_api_token="test", lead_hunter_db=tmp_path / "fallback.sqlite3"),
+        transport=httpx.MockTransport(fallback_mock),
+    )
+
+    res = await ai.complete(
+        system_prompt="Test fallback",
+        user_prompt="Run query",
+        purpose="all",
+        expect_json=True,
+    )
+    # The secondary fallback provider must complete the request seamlessly
+    assert res["provider_name"] == "Secondary Fallback"
+    assert res["model"] == "deepseek-chat"
+    assert res["data"]["fallback_success"] is True
+
+    # Usage must reflect recorded tokens and successful fallback
+    summary = store.get_ai_usage_summary()
+    assert summary["total_calls"] == 2  # 1 error on primary, 1 success on secondary
+    assert summary["prompt_tokens"] == 15
+    assert summary["completion_tokens"] == 8
+
+
+@pytest.mark.asyncio
+async def test_provider_health_check_ping_api(tmp_path):
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    pstore = PlatformStore(base)
+    AdsStore(base)
+
+    p = pstore.save_ai_provider({
+        "name": "Fast Flash Ping",
+        "provider": "openai",
+        "api_key": "sk-secret-ping-token-12345",
+        "base_url": "https://api.openai.com/v1",
+        "model_name": "gpt-4o-mini",
+        "purpose": "test_tier",
+        "is_active": True,
+    })
+
+    def ping_mock(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "OK"}}],
+            "usage": {"prompt_tokens": 8, "completion_tokens": 2},
+        })
+
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[studio_store] = lambda: pstore
+    app.dependency_overrides[studio_ai] = lambda: AIEngine(pstore, settings, transport=httpx.MockTransport(ping_mock))
+    app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+
+    try:
+        with TestClient(app) as client:
+            h = {"X-Control-Request": "1"}
+            lg = client.post("/platform/api/login", json={"password": "studio-test-secret"}, headers=h)
+            assert lg.status_code == 200
+
+            # Ping endpoint
+            res = client.post(f"/platform/api/studio/connectors/models/{p['id']}/ping", headers=h)
+            assert res.status_code == 200
+            data = res.json()
+            assert data["ok"] is True
+            assert data["provider"] == "openai"
+            assert data["model"] == "gpt-4o-mini"
+            assert data["reply"] == "OK"
+            assert data["latency_ms"] >= 0
+
+            # Usage overview endpoint
+            usg = client.get("/platform/api/studio/ai-usage", headers=h)
+            assert usg.status_code == 200
+            u_data = usg.json()
+            assert u_data["total_calls"] >= 1
+            assert u_data["prompt_tokens"] >= 8
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_zero_token_leakage_in_errors_and_tracebacks(tmp_path):
+    store = PlatformStore(SalesStore(tmp_path / "leak.sqlite3"))
+    sensitive_token = "sk-super-secret-production-token-998877665544"
+    store.save_ai_provider({
+        "name": "Failing Upstream",
+        "provider": "openai",
+        "api_key": sensitive_token,
+        "base_url": "https://broken.example.com/v1",
+        "model_name": "gpt-4o",
+        "purpose": "all",
+        "is_active": True,
+    })
+
+    def leak_mock(request: httpx.Request) -> httpx.Response:
+        # Simulate upstream server echoing headers/keys in an error
+        return httpx.Response(401, text=f"Unauthorized: token {sensitive_token} invalid")
+
+    ai = AIEngine(
+        store=store,
+        settings=Settings(lead_hunter_api_token="test", lead_hunter_db=tmp_path / "leak.sqlite3"),
+        transport=httpx.MockTransport(leak_mock),
+    )
+
+    with pytest.raises(AIEngineError) as exc_info:
+        await ai.complete("sys", "usr", purpose="all", expect_json=False)
+
+    err_str = str(exc_info.value)
+    # The raw token must NEVER appear in the exception string
+    assert sensitive_token not in err_str
+    assert "••••" in err_str
+
+

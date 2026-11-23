@@ -16,7 +16,7 @@ from app.services.ai_engine import AIEngine, AIEngineError, build_call_script_pr
 from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 
 router = APIRouter(prefix="/platform/api/studio", tags=["Platform Studio"])
 
@@ -39,7 +39,7 @@ class AIProviderIn(BaseModel):
     api_key: str = Field(default="", max_length=512)
     base_url: str = Field(default="", max_length=500)
     model_name: str = Field(min_length=2, max_length=160)
-    purpose: str = Field(default="all", pattern=r"^(all|web_research|audience_generation|voice_scripting)$")
+    purpose: str = Field(default="all", pattern=r"^(all|web_research|research_tier|audience_generation|reasoning_tier|test_tier|testing|voice_scripting)$")
     is_active: bool = True
 
 
@@ -159,6 +159,7 @@ def delete_ai_model(provider_id: int, store: PlatformStore = Depends(studio_stor
 
 
 @router.post("/connectors/models/{provider_id}/test", dependencies=[Depends(auth)])
+@router.post("/connectors/models/{provider_id}/ping", dependencies=[Depends(auth)])
 async def test_ai_model(provider_id: int, ai: AIEngine = Depends(studio_ai)):
     try:
         return await ai.test_provider(provider_id)
@@ -166,6 +167,11 @@ async def test_ai_model(provider_id: int, ai: AIEngine = Depends(studio_ai)):
         raise HTTPException(502, str(exc)) from None
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"network_error: {exc}") from None
+
+
+@router.get("/ai-usage", dependencies=[Depends(auth)])
+def get_ai_usage(limit: int = 50, store: PlatformStore = Depends(studio_store)):
+    return store.get_ai_usage_summary(limit=limit)
 
 
 # ------------------------------------------------------------------

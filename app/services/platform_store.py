@@ -9,7 +9,7 @@ from typing import Any, Optional
 from app.services.catalog import CATALOG
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 
 STUDIO_SCHEMA = """
 CREATE TABLE IF NOT EXISTS am_ai_providers(
@@ -23,6 +23,21 @@ CREATE TABLE IF NOT EXISTS am_ai_providers(
     is_active INTEGER NOT NULL DEFAULT 1,
     created TEXT NOT NULL,
     updated TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS am_ai_usage(
+    id INTEGER PRIMARY KEY,
+    provider_id INTEGER NOT NULL DEFAULT 0,
+    provider_name TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    tier TEXT NOT NULL DEFAULT 'all',
+    purpose TEXT NOT NULL,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    estimated_cost_usd REAL NOT NULL DEFAULT 0.0,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'success',
+    created TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS am_products(
     id INTEGER PRIMARY KEY,
@@ -385,3 +400,85 @@ class PlatformStore:
         with self.base.connect() as db:
             rc = db.execute("DELETE FROM am_products WHERE id=?", (product_id,)).rowcount
         return rc > 0
+
+    # ------------------------------------------------------------------
+    # AI Token & Cost Usage Tracking
+    # ------------------------------------------------------------------
+    def record_ai_usage(
+        self,
+        provider_id: int,
+        provider_name: str,
+        model_name: str,
+        tier: str,
+        purpose: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        estimated_cost_usd: float,
+        latency_ms: int,
+        status: str = "success",
+    ) -> int:
+        ts = now().isoformat()
+        total = max(0, prompt_tokens) + max(0, completion_tokens)
+        with self.base.connect() as db:
+            return db.execute(
+                """
+                INSERT INTO am_ai_usage(
+                    provider_id, provider_name, model_name, tier, purpose,
+                    prompt_tokens, completion_tokens, total_tokens,
+                    estimated_cost_usd, latency_ms, status, created
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    provider_id,
+                    provider_name,
+                    model_name,
+                    tier,
+                    purpose,
+                    max(0, prompt_tokens),
+                    max(0, completion_tokens),
+                    total,
+                    round(max(0.0, estimated_cost_usd), 6),
+                    max(0, latency_ms),
+                    status,
+                    ts,
+                ),
+            ).lastrowid
+
+    def get_ai_usage_summary(self, limit: int = 50) -> dict:
+        with self.base.connect() as db:
+            stats = db.execute(
+                """
+                SELECT
+                    COUNT(*) as total_calls,
+                    COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+                    COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+                    COALESCE(SUM(total_tokens), 0) as total_tokens,
+                    COALESCE(SUM(estimated_cost_usd), 0.0) as estimated_cost_usd,
+                    COALESCE(AVG(latency_ms), 0.0) as avg_latency_ms
+                FROM am_ai_usage
+                """
+            ).fetchone()
+            rows = [
+                dict(r)
+                for r in db.execute(
+                    "SELECT * FROM am_ai_usage ORDER BY id DESC LIMIT ?", (max(1, limit),)
+                ).fetchall()
+            ]
+        total_calls = stats["total_calls"] if stats else 0
+        prompt_tokens = stats["prompt_tokens"] if stats else 0
+        completion_tokens = stats["completion_tokens"] if stats else 0
+        total_tokens = stats["total_tokens"] if stats else 0
+        cost_usd = float(stats["estimated_cost_usd"] if stats else 0.0)
+        avg_latency = float(stats["avg_latency_ms"] if stats else 0.0)
+
+        return {
+            "total_calls": total_calls,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "estimated_cost_usd": round(cost_usd, 6),
+            "estimated_cost_kzt": round(cost_usd * 500.0, 2),
+            "avg_latency_ms": int(avg_latency),
+            "recent": rows,
+        }
+
