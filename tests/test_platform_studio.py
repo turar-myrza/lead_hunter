@@ -5,10 +5,12 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.ads_manager import ads_service
 from app.api.control_center import service as cc_service
 from app.api.platform_studio import studio_ai, studio_store
 from app.core.config import Settings, get_settings
 from app.main import app
+from app.services.ads_manager import AdsManager
 from app.services.ads_store import AdsStore
 from app.services.ai_engine import AIEngine, build_call_script_preview
 from app.services.control_center import ControlCenter
@@ -114,6 +116,7 @@ def test_studio_api_prompt_to_product_and_audience_apply(tmp_path):
 
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+    app.dependency_overrides[ads_service] = lambda: AdsManager(AdsStore(base), settings)
     app.dependency_overrides[studio_store] = lambda: pstore
     app.dependency_overrides[studio_ai] = lambda: ai
     try:

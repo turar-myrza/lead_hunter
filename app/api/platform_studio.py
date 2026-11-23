@@ -330,21 +330,21 @@ def apply_analyzed_audiences(data: ApplyAudiencesIn, store: PlatformStore = Depe
         keywords = [str(k).strip() for k in (seg.get("keywords") or []) if str(k).strip()][:15]
         rules = {
             "regions": regions,
-            "keywords": keywords,
-            "sources": ["csv_seed", "goszakup"] if segment_type == "b2g" else ["csv_seed"],
-            "mobile_only": False,
-            "has_director": False,
-            "min_icp_score": 0,
-            "min_sum_kzt": None,
-            "max_leads": 200,
+            "keywords": keywords[:10],
+            "sources": ["csv_seed", "goszakup"] if segment_type == "b2g" else (["manual_import"] if segment_type == "b2c" else ["csv_seed"]),
+            "require_phone": True,
+            "year": 2026,
         }
-        aud = ads_store.create_audience(
-            campaign_id=data.campaign_id,
-            name=str(seg.get("name") or "AI Segment")[:140],
-            segment=segment_type,
-            rules=rules,
-            auto_discovery=True,
-        )
+        try:
+            aud = ads_store.create_audience(
+                campaign_id=data.campaign_id,
+                name=str(seg.get("name") or "AI Segment")[:140],
+                segment=segment_type,
+                rules=rules,
+                auto_discovery=True,
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
         created.append(aud)
     return {"created_count": len(created), "items": created}
 
