@@ -9,7 +9,7 @@ from typing import Any, Optional
 from app.services.catalog import CATALOG
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 STUDIO_SCHEMA = """
 CREATE TABLE IF NOT EXISTS am_ai_providers(
@@ -39,6 +39,35 @@ CREATE TABLE IF NOT EXISTS am_ai_usage(
     status TEXT NOT NULL DEFAULT 'success',
     created TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS am_company_entities(
+    id INTEGER PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    bin TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
+    website TEXT NOT NULL DEFAULT '',
+    manager_name TEXT NOT NULL DEFAULT '',
+    manager_phone TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    default_pdf_kz TEXT NOT NULL DEFAULT '',
+    default_pdf_ru TEXT NOT NULL DEFAULT '',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created TEXT NOT NULL,
+    updated TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS am_document_templates(
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    doc_type TEXT NOT NULL DEFAULT 'offer',
+    lang TEXT NOT NULL DEFAULT 'ru',
+    company_id INTEGER NOT NULL DEFAULT 0,
+    file_name TEXT NOT NULL DEFAULT '',
+    file_path TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT '',
+    content_text TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 0,
+    created TEXT NOT NULL,
+    updated TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS am_products(
     id INTEGER PRIMARY KEY,
     slug TEXT NOT NULL UNIQUE,
@@ -52,6 +81,7 @@ CREATE TABLE IF NOT EXISTS am_products(
     target_use_case TEXT NOT NULL DEFAULT '',
     pdf_kz TEXT NOT NULL DEFAULT '',
     pdf_ru TEXT NOT NULL DEFAULT '',
+    company_id INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL DEFAULT 'manual',
     created TEXT NOT NULL,
     updated TEXT NOT NULL
@@ -123,7 +153,18 @@ class PlatformStore:
             cols = {r["name"] for r in db.execute("PRAGMA table_info(am_products)").fetchall()}
             if "certifications" not in cols:
                 db.execute("ALTER TABLE am_products ADD COLUMN certifications TEXT NOT NULL DEFAULT ''")
+            if "company_id" not in cols:
+                db.execute("ALTER TABLE am_products ADD COLUMN company_id INTEGER NOT NULL DEFAULT 0")
+        self._seed_default_company_entity()
         self._seed_default_products()
+
+    def _seed_default_company_entity(self) -> None:
+        with self.base.connect() as db:
+            cnt = int(db.execute("SELECT COUNT(*) FROM am_company_entities").fetchone()[0])
+            if cnt > 0:
+                return
+        legacy = self._get_json_setting("company_profile", DEFAULT_COMPANY_PROFILE)
+        self.save_company_entity({**legacy, "is_default": True})
 
     def _seed_default_products(self) -> None:
         with self.base.connect() as db:
@@ -178,15 +219,214 @@ class PlatformStore:
         return payload
 
     # ------------------------------------------------------------------
-    # Company Profile, Telephony & CRM Connectors
+    # Multi-Company Entities & Legacy Profile Sync
     # ------------------------------------------------------------------
+    def list_company_entities(self) -> list[dict]:
+        with self.base.connect() as db:
+            rows = [
+                dict(r)
+                for r in db.execute("SELECT * FROM am_company_entities ORDER BY is_default DESC, id ASC").fetchall()
+            ]
+        for r in rows:
+            r["is_default"] = bool(r.get("is_default"))
+        return rows
+
+    def get_company_entity(self, entity_id: int) -> Optional[dict]:
+        with self.base.connect() as db:
+            row = db.execute("SELECT * FROM am_company_entities WHERE id=?", (entity_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["is_default"] = bool(d.get("is_default"))
+        return d
+
+    def get_active_company_entity(self) -> dict:
+        with self.base.connect() as db:
+            row = db.execute("SELECT * FROM am_company_entities ORDER BY is_default DESC, id ASC LIMIT 1").fetchone()
+        if not row:
+            return dict(DEFAULT_COMPANY_PROFILE)
+        d = dict(row)
+        d["is_default"] = bool(d.get("is_default"))
+        return d
+
+    def save_company_entity(self, data: dict, entity_id: Optional[int] = None) -> dict:
+        ts = now().isoformat()
+        is_def = bool(data.get("is_default", False))
+        fields = (
+            (data.get("company_name") or "ТОО").strip(),
+            (data.get("bin") or "").strip(),
+            (data.get("city") or "").strip(),
+            (data.get("website") or "").strip(),
+            (data.get("manager_name") or "").strip(),
+            (data.get("manager_phone") or "").strip(),
+            (data.get("description") or "").strip(),
+            (data.get("default_pdf_kz") or "").strip(),
+            (data.get("default_pdf_ru") or "").strip(),
+        )
+        with self.base.connect() as db:
+            if is_def:
+                db.execute("UPDATE am_company_entities SET is_default=0")
+            if entity_id is None:
+                eid = db.execute(
+                    """
+                    INSERT INTO am_company_entities(
+                        company_name, bin, city, website, manager_name, manager_phone,
+                        description, default_pdf_kz, default_pdf_ru, is_default, created, updated
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (*fields, 1 if is_def else 0, ts, ts),
+                ).lastrowid
+            else:
+                rc = db.execute(
+                    """
+                    UPDATE am_company_entities
+                    SET company_name=?, bin=?, city=?, website=?, manager_name=?, manager_phone=?,
+                        description=?, default_pdf_kz=?, default_pdf_ru=?, is_default=?, updated=?
+                    WHERE id=?
+                    """,
+                    (*fields, 1 if is_def else 0, ts, entity_id),
+                ).rowcount
+                if not rc:
+                    raise ValueError("company_entity_not_found")
+                eid = entity_id
+        saved = self.get_company_entity(eid)  # type: ignore[return-value]
+        if saved and saved.get("is_default"):
+            self._set_json_setting("company_profile", {k: saved[k] for k in DEFAULT_COMPANY_PROFILE if k in saved})
+        return saved  # type: ignore[return-value]
+
+    def set_default_company_entity(self, entity_id: int) -> dict:
+        entity = self.get_company_entity(entity_id)
+        if not entity:
+            raise ValueError("company_entity_not_found")
+        with self.base.connect() as db:
+            db.execute("UPDATE am_company_entities SET is_default=0")
+            db.execute("UPDATE am_company_entities SET is_default=1, updated=? WHERE id=?", (now().isoformat(), entity_id))
+        updated = self.get_company_entity(entity_id)  # type: ignore[return-value]
+        if updated:
+            self._set_json_setting("company_profile", {k: updated[k] for k in DEFAULT_COMPANY_PROFILE if k in updated})
+        return updated  # type: ignore[return-value]
+
+    def delete_company_entity(self, entity_id: int) -> bool:
+        entities = self.list_company_entities()
+        if len(entities) <= 1:
+            raise ValueError("cannot_delete_last_company_entity")
+        target = self.get_company_entity(entity_id)
+        if not target:
+            return False
+        with self.base.connect() as db:
+            rc = db.execute("DELETE FROM am_company_entities WHERE id=?", (entity_id,)).rowcount
+        if rc > 0 and target.get("is_default"):
+            remaining = self.list_company_entities()
+            if remaining:
+                self.set_default_company_entity(remaining[0]["id"])
+        return rc > 0
+
     def get_company_profile(self) -> dict:
-        return self._get_json_setting("company_profile", DEFAULT_COMPANY_PROFILE)
+        active = self.get_active_company_entity()
+        return {k: active.get(k, DEFAULT_COMPANY_PROFILE[k]) for k in DEFAULT_COMPANY_PROFILE} | {"id": active.get("id", 0)}
 
     def save_company_profile(self, data: dict) -> dict:
-        current = self.get_company_profile()
-        current.update({k: v for k, v in data.items() if k in DEFAULT_COMPANY_PROFILE})
-        return self._set_json_setting("company_profile", current)
+        active = self.get_active_company_entity()
+        merged = {**active, **{k: v for k, v in data.items() if k in DEFAULT_COMPANY_PROFILE}, "is_default": True}
+        if active.get("id"):
+            return self.save_company_entity(merged, entity_id=active["id"])
+        return self.save_company_entity(merged)
+
+    # ------------------------------------------------------------------
+    # Document Templates (Offer, Inquiry, Contract, Presentation)
+    # ------------------------------------------------------------------
+    def list_document_templates(self, doc_type: str = "") -> list[dict]:
+        sql = "SELECT * FROM am_document_templates"
+        params: tuple = ()
+        if doc_type:
+            sql += " WHERE doc_type=?"
+            params = (doc_type.strip().lower(),)
+        sql += " ORDER BY is_active DESC, id DESC"
+        with self.base.connect() as db:
+            rows = [dict(r) for r in db.execute(sql, params).fetchall()]
+        for r in rows:
+            r["is_active"] = bool(r.get("is_active"))
+        return rows
+
+    def get_document_template(self, template_id: int) -> Optional[dict]:
+        with self.base.connect() as db:
+            row = db.execute("SELECT * FROM am_document_templates WHERE id=?", (template_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["is_active"] = bool(d.get("is_active"))
+        return d
+
+    def get_active_template(self, doc_type: str = "offer", lang: str = "ru") -> Optional[dict]:
+        with self.base.connect() as db:
+            row = db.execute(
+                "SELECT * FROM am_document_templates WHERE doc_type=? AND lang=? AND is_active=1 ORDER BY id DESC LIMIT 1",
+                (doc_type.strip().lower(), lang.strip().lower()),
+            ).fetchone()
+            if not row:
+                row = db.execute(
+                    "SELECT * FROM am_document_templates WHERE doc_type=? AND is_active=1 ORDER BY id DESC LIMIT 1",
+                    (doc_type.strip().lower(),),
+                ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["is_active"] = True
+        return d
+
+    def save_document_template(self, data: dict) -> dict:
+        ts = now().isoformat()
+        doc_type = (data.get("doc_type") or "offer").strip().lower()
+        lang = (data.get("lang") or "ru").strip().lower()
+        is_active = bool(data.get("is_active", False))
+        with self.base.connect() as db:
+            if is_active:
+                db.execute(
+                    "UPDATE am_document_templates SET is_active=0 WHERE doc_type=? AND lang=?",
+                    (doc_type, lang),
+                )
+            tid = db.execute(
+                """
+                INSERT INTO am_document_templates(
+                    name, doc_type, lang, company_id, file_name, file_path,
+                    mime_type, content_text, is_active, created, updated
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    (data.get("name") or "Untitled Template").strip()[:160],
+                    doc_type,
+                    lang,
+                    int(data.get("company_id") or 0),
+                    (data.get("file_name") or "").strip()[:200],
+                    (data.get("file_path") or "").strip()[:500],
+                    (data.get("mime_type") or "").strip()[:120],
+                    (data.get("content_text") or "").strip()[:30000],
+                    1 if is_active else 0,
+                    ts,
+                    ts,
+                ),
+            ).lastrowid
+        return self.get_document_template(tid)  # type: ignore[return-value]
+
+    def set_active_document_template(self, template_id: int) -> dict:
+        tpl = self.get_document_template(template_id)
+        if not tpl:
+            raise ValueError("template_not_found")
+        with self.base.connect() as db:
+            db.execute(
+                "UPDATE am_document_templates SET is_active=0 WHERE doc_type=? AND lang=?",
+                (tpl["doc_type"], tpl["lang"]),
+            )
+            db.execute(
+                "UPDATE am_document_templates SET is_active=1, updated=? WHERE id=?",
+                (now().isoformat(), template_id),
+            )
+        return self.get_document_template(template_id)  # type: ignore[return-value]
+
+    def delete_document_template(self, template_id: int) -> bool:
+        with self.base.connect() as db:
+            rc = db.execute("DELETE FROM am_document_templates WHERE id=?", (template_id,)).rowcount
+        return rc > 0
 
     def get_telephony_config(self) -> dict:
         return self._get_json_setting("telephony_config", DEFAULT_TELEPHONY_CONFIG)
@@ -354,8 +594,8 @@ class PlatformStore:
                     """
                     INSERT INTO am_products(
                         slug, name, name_ru, category, price_range, models, specs,
-                        certifications, target_use_case, pdf_kz, pdf_ru, source, created, updated
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        certifications, target_use_case, pdf_kz, pdf_ru, company_id, source, created, updated
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         slug,
@@ -369,6 +609,7 @@ class PlatformStore:
                         (data.get("target_use_case") or "").strip(),
                         (data.get("pdf_kz") or "").strip(),
                         (data.get("pdf_ru") or "").strip(),
+                        int(data.get("company_id") or 0),
                         (data.get("source") or "manual").strip(),
                         ts,
                         ts,
@@ -379,7 +620,7 @@ class PlatformStore:
                     """
                     UPDATE am_products
                     SET name=?, name_ru=?, category=?, price_range=?, models=?, specs=?,
-                        certifications=?, target_use_case=?, pdf_kz=?, pdf_ru=?, updated=?
+                        certifications=?, target_use_case=?, pdf_kz=?, pdf_ru=?, company_id=?, updated=?
                     WHERE id=?
                     """,
                     (
@@ -393,6 +634,7 @@ class PlatformStore:
                         (data.get("target_use_case") or "").strip(),
                         (data.get("pdf_kz") or "").strip(),
                         (data.get("pdf_ru") or "").strip(),
+                        int(data.get("company_id") or 0),
                         ts,
                         product_id,
                     ),

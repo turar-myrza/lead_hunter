@@ -1,15 +1,15 @@
 'use strict';
 
 /* =========================================================================
-   Lead Hunter Platform Studio UI (v2.7.0)
+   Lead Hunter Platform Studio UI (v2.8.0)
+   - Dedicated AI Connectors vs. CRM & ERP Sync Tabs
+   - Multi-Company Legal Entity Manager (Advertise from Selected Entity)
+   - Document Templates Library & Uploader (Offer, Inquiry, Contract, etc.)
    - Declarative Component Mounts (Zero DOM duplication on Grid/List toggle)
    - LiteLLM Unified Router & Tier Connectors (Research, Reasoning, Test, Local)
-   - Real-Time Model Ping (Latency, Token Count, Estimated Cost)
    - SSRF-Safe Prompt-to-Product Web Scraper & Pydantic Schema Extractor
-   - Branded Commercial Offer HTML/PDF Preview Generator
    - SQLite FTS5 BM25 Market Seed Explorer & Prompt-to-Audience Analyzer
    - End-to-End Bitrix24 CRM Handoff & Pipeline Funnel Analytics
-   - Telephony Engine, Voice Audio Preview (KZ/RU), Company Profile & Call Script Studio
    ========================================================================= */
 
 window.PlatformStudioUI = (() => {
@@ -21,6 +21,7 @@ window.PlatformStudioUI = (() => {
   let studioSettings = null;
   let aiProviders = [];
   let studioProducts = [];
+  let companyEntities = [];
   let campaignsCache = [];
   let scriptLang = 'kz';
   let scriptProductKey = '';
@@ -91,8 +92,12 @@ window.PlatformStudioUI = (() => {
     const loading = el('p', 'Loading catalog...', 'muted');
     root.append(loading);
     try {
-      const res = await api('/studio/products');
-      studioProducts = res.items || [];
+      const [pRes, cRes] = await Promise.all([
+        api('/studio/products'),
+        api('/studio/companies').catch(() => ({ items: [] })),
+      ]);
+      studioProducts = pRes.items || [];
+      companyEntities = cRes.items || [];
     } catch (e) {
       loading.textContent = 'Failed to load catalog: ' + e.message;
       return;
@@ -369,7 +374,7 @@ window.PlatformStudioUI = (() => {
   }
 
   function openProductModal(existing, h, onDone) {
-    const { api, edit, field, onRefreshState } = h;
+    const { api, edit, field, el, onRefreshState } = h;
     edit(existing ? 'Edit Product Card' : 'Add Product Manually', f => {
       field(f, 'name', 'Product Name (KZ)', existing?.name || '');
       field(f, 'name_ru', 'Product Name (RU)', existing?.name_ru || '');
@@ -380,6 +385,17 @@ window.PlatformStudioUI = (() => {
       field(f, 'target_use_case', 'Target Use Case', existing?.target_use_case || '');
       field(f, 'pdf_kz', 'Commercial Offer PDF URL (KZ)', existing?.pdf_kz || '');
       field(f, 'pdf_ru', 'Commercial Offer PDF URL (RU)', existing?.pdf_ru || '');
+      const cLbl = el('label', 'Advertising Company Entity');
+      const cSel = el('select'); cSel.name = 'company_id';
+      const optDef = el('option', 'Use Active Default Company Entity'); optDef.value = '0'; cSel.append(optDef);
+      for (const c of companyEntities) {
+        const o = el('option', `${c.company_name}${c.is_default ? ' (Default)' : ''}`);
+        o.value = String(c.id);
+        if (String(existing?.company_id || 0) === String(c.id)) o.selected = true;
+        cSel.append(o);
+      }
+      cLbl.append(cSel);
+      f.append(cLbl);
     }, async v => {
       const payload = {
         name: v.name.trim(),
@@ -391,6 +407,7 @@ window.PlatformStudioUI = (() => {
         target_use_case: v.target_use_case.trim(),
         pdf_kz: v.pdf_kz.trim(),
         pdf_ru: v.pdf_ru.trim(),
+        company_id: parseInt(v.company_id || '0', 10) || 0,
         source: existing?.source || 'manual',
       };
       if (existing) await api('/studio/products/' + existing.id, 'PUT', payload);
@@ -575,40 +592,29 @@ window.PlatformStudioUI = (() => {
   }
 
   /* =========================================================================
-     3. AI MODEL & TOKEN CONNECTORS + CRM/ERP CONNECTORS
+     3A. AI MODEL & TOKEN CONNECTORS (DEDICATED TAB)
      ========================================================================= */
-  async function renderConnectors(root, h) {
+  async function renderAIConnectors(root, h) {
     const { api, el, add, button, badge, notice, paragraph } = h;
-    
-    // Strict clean mount
     root.replaceChildren();
 
     paragraph(root, 'Configure API access tokens for proprietary LLMs (Gemini, OpenAI, DeepSeek, Anthropic) or self-hosted local models (Ollama, vLLM, LM Studio) with automatic rate-limit fallback and live cost tracking.', 'lead');
 
     let envInfo = {};
     let usageInfo = {};
-    let funnelInfo = {};
     try {
-      const [mRes, sRes, uRes, fRes] = await Promise.all([
+      const [mRes, uRes] = await Promise.all([
         api('/studio/connectors/models'),
-        api('/studio/settings'),
         api('/studio/ai-usage').catch(() => ({ total_calls: 0, total_tokens: 0, estimated_cost_usd: 0, avg_latency_ms: 0 })),
-        api('/studio/analytics').catch(() => ({ products: 0, seeds_indexed: 0, leads: 0, calls_today: 0, calls_qualified: 0, deals_created_in_crm: 0 })),
       ]);
       aiProviders = mRes.items || [];
       envInfo = mRes;
-      studioSettings = sRes;
       usageInfo = uRes || {};
-      funnelInfo = fRes || {};
     } catch (e) {
-      root.append(el('p', 'Failed to load connectors: ' + e.message, 'muted'));
+      root.append(el('p', 'Failed to load AI connectors: ' + e.message, 'muted'));
       return;
     }
 
-    // Pipeline Funnel & Bitrix24 CRM Analytics
-    const funnelCard = el('div', undefined, 'card');
-    funnelCard.append(el('h3', '📈 End-to-End Autonomous Funnel & CRM Handoff'));
-    const fGrid = el('div', undefined, 'studio-summary-bar');
     const metric = (lbl, val, sub) => {
       const b = el('div', undefined, 'studio-stat-box');
       b.append(el('span', lbl, 'muted'));
@@ -616,14 +622,6 @@ window.PlatformStudioUI = (() => {
       if (sub) b.append(el('small', sub, 'muted'));
       return b;
     };
-    add(fGrid,
-      metric('Catalog Products', String(funnelInfo.products || 0), `${(funnelInfo.seeds_indexed || 0).toLocaleString()} indexed market seeds`),
-      metric('Discovered Leads', String(funnelInfo.leads || 0), `${funnelInfo.audiences || 0} active audiences`),
-      metric('AI Calls Today', String(funnelInfo.calls_today || 0), `${funnelInfo.calls_total || 0} total · ${funnelInfo.offers_sent || 0} WhatsApp offers`),
-      metric('CRM Deals Created', String(funnelInfo.deals_created_in_crm || 0), `${funnelInfo.calls_qualified || 0} qualified (${funnelInfo.qualification_rate_pct || 0}% rate)`)
-    );
-    funnelCard.append(fGrid);
-    root.append(funnelCard);
 
     // Telemetry & Spend Banner
     const teleCard = el('div', undefined, 'card studio-highlight');
@@ -638,7 +636,7 @@ window.PlatformStudioUI = (() => {
     teleCard.append(tGrid);
     root.append(teleCard);
 
-    // Section A: AI Model & Token Connectors
+    // AI Model & Token Connectors
     const aiCard = el('div', undefined, 'card');
     const aiHead = el('div', undefined, 'studio-toolbar');
     const titleDiv = el('div');
@@ -647,7 +645,7 @@ window.PlatformStudioUI = (() => {
       titleDiv.append(badge(`System Fallback Active: ${envInfo.env_gemini_model || 'gemini-flash-latest'}`, 'live-badge'));
     }
     const addModelBtn = button('+ Add AI Model / Local Endpoint', async () => {
-      openProviderModal(null, h, () => renderConnectors(root, h));
+      openProviderModal(null, h, () => renderAIConnectors(root, h));
     }, 'primary-btn');
     add(aiHead, titleDiv, addModelBtn);
     aiCard.append(aiHead);
@@ -679,11 +677,11 @@ window.PlatformStudioUI = (() => {
               notice('Ping failed: ' + err.message);
             }
           }, 'primary-btn'),
-          button('Edit', async () => openProviderModal(p, h, () => renderConnectors(root, h)), 'secondary-btn'),
+          button('Edit', async () => openProviderModal(p, h, () => renderAIConnectors(root, h)), 'secondary-btn'),
           button('Delete', async () => {
             await api(`/studio/connectors/models/${p.id}`, 'DELETE');
             notice('AI connector removed');
-            renderConnectors(root, h);
+            renderAIConnectors(root, h);
           }, 'secondary-btn')
         );
         tdActs.append(acts, pingStatus);
@@ -702,11 +700,55 @@ window.PlatformStudioUI = (() => {
       aiCard.append(tbl);
     }
     root.append(aiCard);
+  }
 
-    // Section B: CRM / ERP / CMS Connectors
+  /* =========================================================================
+     3B. CRM, ERP & CMS SYNC TAB (DEDICATED TAB)
+     ========================================================================= */
+  async function renderCrmSync(root, h) {
+    const { api, el, add, button, notice, paragraph } = h;
+    root.replaceChildren();
+
+    paragraph(root, 'Connect Bitrix24, MoySklad, 1C, and E-Commerce CMS feeds for one-click product catalog sync and autonomous hot-lead Deal/Contact creation.', 'lead');
+
+    let funnelInfo = {};
+    try {
+      const [sRes, fRes] = await Promise.all([
+        api('/studio/settings'),
+        api('/studio/analytics').catch(() => ({ products: 0, seeds_indexed: 0, leads: 0, calls_today: 0, calls_qualified: 0, deals_created_in_crm: 0 })),
+      ]);
+      studioSettings = sRes;
+      funnelInfo = fRes || {};
+    } catch (e) {
+      root.append(el('p', 'Failed to load CRM connectors: ' + e.message, 'muted'));
+      return;
+    }
+
+    const metric = (lbl, val, sub) => {
+      const b = el('div', undefined, 'studio-stat-box');
+      b.append(el('span', lbl, 'muted'));
+      b.append(el('strong', val, 'stat-number'));
+      if (sub) b.append(el('small', sub, 'muted'));
+      return b;
+    };
+
+    // Pipeline Funnel & Bitrix24 CRM Analytics
+    const funnelCard = el('div', undefined, 'card');
+    funnelCard.append(el('h3', '📈 End-to-End Autonomous Funnel & CRM Handoff'));
+    const fGrid = el('div', undefined, 'studio-summary-bar');
+    add(fGrid,
+      metric('Catalog Products', String(funnelInfo.products || 0), `${(funnelInfo.seeds_indexed || 0).toLocaleString()} indexed market seeds`),
+      metric('Discovered Leads', String(funnelInfo.leads || 0), `${funnelInfo.audiences || 0} active audiences`),
+      metric('AI Calls Today', String(funnelInfo.calls_today || 0), `${funnelInfo.calls_total || 0} total · ${funnelInfo.offers_sent || 0} WhatsApp offers`),
+      metric('CRM Deals Created', String(funnelInfo.deals_created_in_crm || 0), `${funnelInfo.calls_qualified || 0} qualified (${funnelInfo.qualification_rate_pct || 0}% rate)`)
+    );
+    funnelCard.append(fGrid);
+    root.append(funnelCard);
+
+    // CRM / ERP / CMS Connectors
     const crm = studioSettings?.connectors || {};
-    const crmCard = el('div', undefined, 'card');
-    crmCard.append(el('h3', '🔌 CRM, ERP & CMS Product Platform Connectors'));
+    const crmCard = el('div', undefined, 'card studio-highlight');
+    crmCard.append(el('h3', '🔄 CRM, ERP & CMS Product Platform Connectors'));
     const fB24 = el('input'); fB24.value = crm.bitrix24_webhook || ''; fB24.placeholder = 'https://yourportal.bitrix24.kz/rest/1/xxxxx/';
     const fMS = el('input'); fMS.value = crm.moysklad_token || ''; fMS.placeholder = 'MoySklad Bearer API Token';
     const f1C = el('input'); f1C.value = crm.onec_odata_url || ''; f1C.placeholder = 'https://1c.company.kz/odata/standard.odata/';
@@ -723,7 +765,7 @@ window.PlatformStudioUI = (() => {
     crmCard.append(grid);
     const crmActs = el('div', undefined, 'actions');
     add(crmActs,
-      button('💾 Save Connectors', async () => {
+      button('💾 Save CRM Connectors', async () => {
         await api('/studio/settings/connectors', 'PUT', {
           bitrix24_webhook: fB24.value.trim(),
           moysklad_token: fMS.value.trim(),
@@ -731,7 +773,7 @@ window.PlatformStudioUI = (() => {
           cms_feed_url: fCMS.value.trim(),
         });
         notice('CRM / ERP connectors saved');
-        renderConnectors(root, h);
+        renderCrmSync(root, h);
       }, 'primary-btn'),
       button('🔄 Import from Bitrix24', async () => {
         const r = await api('/studio/products/sync-crm', 'POST', { source: 'bitrix24', limit: 20 });
@@ -805,68 +847,242 @@ window.PlatformStudioUI = (() => {
   }
 
   /* =========================================================================
-     4. COMPANY PROFILE & COMMERCIAL OFFERS (DEDICATED TAB)
+     4A. MULTI-COMPANY ENTITIES (ADVERTISE FROM CHOSEN ENTITY)
      ========================================================================= */
-  async function renderCompanyProfile(root, h) {
-    const { api, el, add, button, notice, paragraph, onRefreshState } = h;
-    
-    // Strict clean mount
+  async function renderCompanyEntities(root, h) {
+    const { api, el, add, button, badge, notice, paragraph, onRefreshState } = h;
     root.replaceChildren();
 
-    paragraph(root, 'Set your company identity and default commercial offer PDFs. The AI Voice Agent automatically introduces itself from this company on every call.', 'lead');
+    paragraph(root, 'Save multiple legal entities (ТОО, ИП, branches) and choose which company entity is currently active for advertising products, AI voice introductions, and commercial offers.', 'lead');
 
+    let entities = [];
     try {
-      studioSettings = await api('/studio/settings');
+      const res = await api('/studio/companies');
+      entities = res.items || [];
     } catch (e) {
-      root.append(el('p', 'Failed to load company profile: ' + e.message, 'muted'));
+      root.append(el('p', 'Failed to load company entities: ' + e.message, 'muted'));
       return;
     }
 
-    const company = studioSettings.company || {};
+    const headBar = el('div', undefined, 'studio-toolbar');
+    headBar.append(el('h3', `🏢 Saved Legal Entities (${entities.length})`));
+    headBar.append(button('+ Add New Company Entity', async () => {
+      openCompanyModal(null, h, async () => {
+        if (onRefreshState) await onRefreshState(false);
+        renderCompanyEntities(root, h);
+      });
+    }, 'primary-btn'));
+    root.append(headBar);
+
+    const grid = el('div', undefined, 'grid');
+    for (const c of entities) {
+      const card = el('article', undefined, 'card studio-product-card' + (c.is_default ? ' is-checked' : ''));
+      const head = el('div', undefined, 'studio-card-head');
+      head.append(el('h3', c.company_name));
+      if (c.is_default) head.append(badge('✓ Active Default', 'live-badge'));
+      card.append(head);
+
+      if (c.bin) card.append(el('div', `BIN: ${c.bin} · ${c.city || ''}`, 'product-meta'));
+      if (c.manager_name || c.manager_phone) card.append(el('div', `Manager: ${c.manager_name || '—'} (${c.manager_phone || '—'})`, 'product-meta'));
+      if (c.description) card.append(el('p', c.description, 'muted'));
+
+      const acts = el('div', undefined, 'actions');
+      if (!c.is_default) {
+        acts.append(button('✓ Set Active Entity', async () => {
+          await api(`/studio/companies/${c.id}/activate`, 'POST');
+          notice(`Active advertising entity switched to ${c.company_name}`);
+          if (onRefreshState) await onRefreshState(false);
+          renderCompanyEntities(root, h);
+        }, 'primary-btn'));
+      }
+      add(acts,
+        button('Edit', async () => openCompanyModal(c, h, async () => {
+          if (onRefreshState) await onRefreshState(false);
+          renderCompanyEntities(root, h);
+        }), 'secondary-btn'),
+        button('Delete', async () => {
+          await api(`/studio/companies/${c.id}`, 'DELETE');
+          notice('Company entity removed');
+          if (onRefreshState) await onRefreshState(false);
+          renderCompanyEntities(root, h);
+        }, 'secondary-btn')
+      );
+      card.append(acts);
+      grid.append(card);
+    }
+    root.append(grid);
+  }
+
+  function openCompanyModal(existing, h, onDone) {
+    const { api, edit, field } = h;
+    edit(existing ? 'Edit Company Entity' : 'Add Legal Company Entity', f => {
+      field(f, 'company_name', 'Company Name (e.g. ТОО «Аврора-2014»)', existing?.company_name || '');
+      field(f, 'bin', 'BIN / IIN', existing?.bin || '');
+      field(f, 'city', 'City', existing?.city || 'Алматы');
+      field(f, 'website', 'Website', existing?.website || '');
+      field(f, 'manager_name', 'Manager Name (for Call Transfer)', existing?.manager_name || '');
+      field(f, 'manager_phone', 'Manager Phone', existing?.manager_phone || '');
+      field(f, 'description', 'Value Proposition / Description', existing?.description || '', 'textarea');
+      field(f, 'default_pdf_kz', 'Default Offer PDF URL (KZ)', existing?.default_pdf_kz || '');
+      field(f, 'default_pdf_ru', 'Default Offer PDF URL (RU)', existing?.default_pdf_ru || '');
+      field(f, 'is_default', 'Set as Active Default Advertising Entity', existing ? existing.is_default : false, 'checkbox');
+    }, async v => {
+      const payload = {
+        company_name: v.company_name.trim(),
+        bin: v.bin.trim(),
+        city: v.city.trim(),
+        website: v.website.trim(),
+        manager_name: v.manager_name.trim(),
+        manager_phone: v.manager_phone.trim(),
+        description: v.description.trim(),
+        default_pdf_kz: v.default_pdf_kz.trim(),
+        default_pdf_ru: v.default_pdf_ru.trim(),
+        is_default: Boolean(v.is_default),
+      };
+      if (existing) await api('/studio/companies/' + existing.id, 'PUT', payload);
+      else await api('/studio/companies', 'POST', payload);
+      onDone();
+    });
+  }
+
+  /* =========================================================================
+     4B. DOCUMENT TEMPLATES LIBRARY & UPLOADER
+     ========================================================================= */
+  async function renderDocumentTemplates(root, h) {
+    const { api, el, add, button, badge, notice, paragraph } = h;
+    root.replaceChildren();
+
+    paragraph(root, 'Upload multiple variations of Commercial Offers, Inquiries, Contracts, or Presentations (.docx, .pdf, .html, .txt, .md) and choose which variation is currently active for outreach.', 'lead');
+
+    let templates = [];
+    let entities = [];
+    try {
+      const [tRes, cRes] = await Promise.all([api('/studio/templates'), api('/studio/companies')]);
+      templates = tRes.items || [];
+      entities = cRes.items || [];
+    } catch (e) {
+      root.append(el('p', 'Failed to load templates: ' + e.message, 'muted'));
+      return;
+    }
+
+    // Upload Form Card
+    const upCard = el('div', undefined, 'card studio-highlight');
+    upCard.append(el('h3', '📤 Upload New Document Template Variation'));
     const wrap = (lbl, node) => { const l = el('label', lbl); l.append(node); return l; };
 
-    const compCard = el('div', undefined, 'card studio-highlight');
-    compCard.append(el('h3', '🏢 Our Company Identity & Commercial Offer PDFs'));
-    const cName = el('input'); cName.value = company.company_name || '';
-    const cBin = el('input'); cBin.value = company.bin || '';
-    const cCity = el('input'); cCity.value = company.city || '';
-    const cWeb = el('input'); cWeb.value = company.website || '';
-    const cMgr = el('input'); cMgr.value = company.manager_name || '';
-    const cPhone = el('input'); cPhone.value = company.manager_phone || '';
-    const cDesc = el('textarea'); cDesc.value = company.description || '';
-    const cPdfKz = el('input'); cPdfKz.value = company.default_pdf_kz || '';
-    const cPdfRu = el('input'); cPdfRu.value = company.default_pdf_ru || '';
+    const tName = el('input'); tName.placeholder = 'e.g. Medical Offer Q2 (Formal) or Standard Contract v3';
+    const tType = el('select');
+    for (const [val, txt] of [
+      ['offer', 'Commercial Offer (КП)'],
+      ['inquiry', 'Inquiry / Request (Запрос)'],
+      ['contract', 'Contract (Договор)'],
+      ['presentation', 'Presentation / Deck'],
+      ['other', 'Other Document'],
+    ]) { const o = el('option', txt); o.value = val; tType.append(o); }
 
-    const cGrid = el('div', undefined, 'studio-form-grid');
-    add(cGrid,
-      wrap('Company Name (AI introduces itself from here)', cName),
-      wrap('Company BIN', cBin),
-      wrap('City', cCity),
-      wrap('Website', cWeb),
-      wrap('Manager Name (for Call Forwarding)', cMgr),
-      wrap('Manager Phone', cPhone),
-      wrap('Default Commercial Offer PDF URL (KZ)', cPdfKz),
-      wrap('Default Commercial Offer PDF URL (RU)', cPdfRu)
+    const tLang = el('select');
+    for (const [val, txt] of [['ru', 'Russian (RU)'], ['kz', 'Kazakh (KZ)']]) {
+      const o = el('option', txt); o.value = val; tLang.append(o);
+    }
+
+    const tComp = el('select');
+    const optAll = el('option', 'All / Active Default Company'); optAll.value = '0'; tComp.append(optAll);
+    for (const c of entities) { const o = el('option', c.company_name); o.value = String(c.id); tComp.append(o); }
+
+    const tFile = el('input'); tFile.type = 'file'; tFile.accept = '.docx,.pdf,.html,.htm,.txt,.md';
+    const tContent = el('textarea'); tContent.placeholder = 'Optional HTML / Markdown / Text body (supports {{company_name}}, {{product_name}}, {{price}}, {{specs}})';
+    const tActive = el('input'); tActive.type = 'checkbox'; tActive.checked = true;
+
+    const uGrid = el('div', undefined, 'studio-form-grid');
+    add(uGrid,
+      wrap('Template Name', tName),
+      wrap('Document Category', tType),
+      wrap('Language', tLang),
+      wrap('Linked Company Entity', tComp),
+      wrap('Upload File (.docx, .pdf, .html, .txt, .md)', tFile)
     );
-    compCard.append(cGrid, wrap('Company Description / Value Proposition', cDesc));
-    const cActs = el('div', undefined, 'actions');
-    cActs.append(button('💾 Save Company Profile', async () => {
-      await api('/studio/settings/company', 'PUT', {
-        company_name: cName.value.trim(),
-        bin: cBin.value.trim(),
-        city: cCity.value.trim(),
-        website: cWeb.value.trim(),
-        manager_name: cMgr.value.trim(),
-        manager_phone: cPhone.value.trim(),
-        description: cDesc.value.trim(),
-        default_pdf_kz: cPdfKz.value.trim(),
-        default_pdf_ru: cPdfRu.value.trim(),
+    upCard.append(uGrid, wrap('Text / HTML Template Body (Optional)', tContent));
+    const chkLbl = el('label', ' Set as currently active template for this category & language');
+    chkLbl.prepend(tActive);
+    upCard.append(chkLbl);
+
+    upCard.append(button('📤 Upload & Save Template', async () => {
+      if (tName.value.trim().length < 2) throw Error('Enter a template name');
+      const fd = new FormData();
+      fd.append('name', tName.value.trim());
+      fd.append('doc_type', tType.value);
+      fd.append('lang', tLang.value);
+      fd.append('company_id', tComp.value);
+      fd.append('is_active', tActive.checked ? 'true' : 'false');
+      fd.append('content_text', tContent.value.trim());
+      if (tFile.files && tFile.files[0]) {
+        fd.append('file', tFile.files[0]);
+      }
+      const resp = await fetch('/platform/api/studio/templates/upload', {
+        method: 'POST',
+        headers: { 'X-Control-Request': '1' },
+        credentials: 'same-origin',
+        body: fd,
       });
-      notice('Company profile saved! AI will now introduce itself as ' + cName.value.trim());
-      if (onRefreshState) await onRefreshState(false);
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+        throw Error(err.detail || 'Upload failed');
+      }
+      notice('Document template uploaded!');
+      renderDocumentTemplates(root, h);
     }, 'primary-btn'));
-    compCard.append(cActs);
-    root.append(compCard);
+    root.append(upCard);
+
+    // Templates Table Card
+    const listCard = el('div', undefined, 'card');
+    listCard.append(el('h3', `📄 Saved Template Variations (${templates.length})`));
+    if (!templates.length) {
+      paragraph(listCard, 'No custom document templates uploaded yet.', 'muted');
+    } else {
+      const tbl = el('table');
+      const thead = el('thead');
+      const hr = el('tr');
+      for (const col of ['Name', 'Category', 'Lang', 'File', 'Status', 'Actions']) hr.append(el('th', col));
+      thead.append(hr);
+      tbl.append(thead);
+      const tbody = el('tbody');
+      for (const t of templates) {
+        const tr = el('tr');
+        const tdActs = el('td');
+        const acts = el('div', undefined, 'actions');
+        if (!t.is_active) {
+          acts.append(button('✓ Set Active', async () => {
+            await api(`/studio/templates/${t.id}/activate`, 'POST');
+            notice(`Template "${t.name}" is now active for ${t.doc_type.toUpperCase()} (${t.lang.toUpperCase()})`);
+            renderDocumentTemplates(root, h);
+          }, 'primary-btn'));
+        }
+        if (t.file_name) {
+          const dl = el('a', '⬇ Download', 'secondary-btn');
+          dl.href = `/platform/api/studio/templates/${t.id}/download`;
+          dl.target = '_blank';
+          acts.append(dl);
+        }
+        acts.append(button('Delete', async () => {
+          await api(`/studio/templates/${t.id}`, 'DELETE');
+          notice('Template deleted');
+          renderDocumentTemplates(root, h);
+        }, 'secondary-btn'));
+        tdActs.append(acts);
+        add(tr,
+          el('td', t.name),
+          el('td', t.doc_type.toUpperCase()),
+          el('td', t.lang.toUpperCase()),
+          el('td', t.file_name || (t.content_text ? 'Inline Text/HTML' : '—')),
+          el('td', t.is_active ? '🟢 Currently Used' : '⚪ Standby'),
+          tdActs
+        );
+        tbody.append(tr);
+      }
+      tbl.append(tbody);
+      listCard.append(tbl);
+    }
+    root.append(listCard);
   }
 
   /* =========================================================================
@@ -1025,8 +1241,10 @@ window.PlatformStudioUI = (() => {
   return {
     renderProductCatalog,
     renderAudienceAnalyzer,
-    renderConnectors,
-    renderCompanyProfile,
+    renderAIConnectors,
+    renderCrmSync,
+    renderCompanyEntities,
+    renderDocumentTemplates,
     renderTelephonyAndScript,
   };
 })();

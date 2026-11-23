@@ -815,6 +815,138 @@ def test_end_to_end_call_outcome_creates_bitrix_deal_and_contact(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_multi_company_entities_and_product_entity_routing(tmp_path):
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    pstore = PlatformStore(base)
+    AdsStore(base)
+
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[studio_store] = lambda: pstore
+    app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+    try:
+        with TestClient(app) as client:
+            h = {"X-Control-Request": "1"}
+            client.post("/platform/api/login", json={"password": "studio-test-secret"}, headers=h)
+
+            # 1. Create a second legal entity
+            c2 = client.post(
+                "/platform/api/studio/companies",
+                json={"company_name": "ТОО «Аврора-2014»", "bin": "140140012345", "city": "Астана"},
+                headers=h,
+            )
+            assert c2.status_code == 200
+            aurora_id = c2.json()["id"]
+
+            # 2. Create product linked specifically to ТОО «Аврора-2014»
+            prod = client.post(
+                "/platform/api/studio/products",
+                json={
+                    "name": "Aurora Lab Centrifuge",
+                    "name_ru": "Центрифуга Аврора",
+                    "price_range": "350 000 ₸",
+                    "company_id": aurora_id,
+                },
+                headers=h,
+            )
+            assert prod.status_code == 200
+            pid = prod.json()["id"]
+
+            # 3. Offer preview for that product must use ТОО «Аврора-2014»
+            prev = client.get(f"/platform/api/studio/products/{pid}/offer-preview?lang=ru", headers=h)
+            assert prev.status_code == 200
+            assert "Аврора-2014" in prev.json()["html"]
+
+            # 4. Activate second entity as default
+            act = client.post(f"/platform/api/studio/companies/{aurora_id}/activate", headers=h)
+            assert act.status_code == 200
+            assert act.json()["is_default"] is True
+            assert pstore.get_company_profile()["company_name"] == "ТОО «Аврора-2014»"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_document_templates_upload_activation_and_security(tmp_path):
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    pstore = PlatformStore(base)
+    AdsStore(base)
+
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[studio_store] = lambda: pstore
+    app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+    try:
+        with TestClient(app) as client:
+            h = {"X-Control-Request": "1"}
+            client.post("/platform/api/login", json={"password": "studio-test-secret"}, headers=h)
+
+            # 1. Upload Offer v1 (active)
+            r1 = client.post(
+                "/platform/api/studio/templates/upload",
+                data={"name": "Offer v1", "doc_type": "offer", "lang": "ru", "is_active": "true"},
+                files={"file": ("offer_v1.txt", b"Commercial Offer V1 Body", "text/plain")},
+                headers=h,
+            )
+            assert r1.status_code == 200
+            t1_id = r1.json()["id"]
+            assert r1.json()["is_active"] is True
+
+            # 2. Upload Offer v2 (active) -> must deactivate Offer v1
+            r2 = client.post(
+                "/platform/api/studio/templates/upload",
+                data={"name": "Offer v2", "doc_type": "offer", "lang": "ru", "is_active": "true"},
+                files={"file": ("offer_v2.html", b"<h1>Offer V2</h1>", "text/html")},
+                headers=h,
+            )
+            assert r2.status_code == 200
+            t2_id = r2.json()["id"]
+            assert r2.json()["is_active"] is True
+            assert pstore.get_document_template(t1_id)["is_active"] is False
+
+            # 3. Download Offer v2
+            dl = client.get(f"/platform/api/studio/templates/{t2_id}/download", headers=h)
+            assert dl.status_code == 200
+            assert b"<h1>Offer V2</h1>" in dl.content
+
+            # 4. Security: Block executable/script extensions
+            for bad_ext in ("evil.py", "hack.sh", "trojan.exe", "shell.php"):
+                bad = client.post(
+                    "/platform/api/studio/templates/upload",
+                    data={"name": "Bad", "doc_type": "offer", "lang": "ru"},
+                    files={"file": (bad_ext, b"malicious", "application/octet-stream")},
+                    headers=h,
+                )
+                assert bad.status_code == 400
+                assert "unsupported_template_extension" in bad.text
+
+            # 5. Security: Path traversal filename is sanitized inside templates/
+            trav = client.post(
+                "/platform/api/studio/templates/upload",
+                data={"name": "Traversal Test", "doc_type": "contract", "lang": "ru"},
+                files={"file": ("../../etc/passwd.txt", b"safe content", "text/plain")},
+                headers=h,
+            )
+            assert trav.status_code == 200
+            assert "templates" in trav.json()["file_path"]
+            assert "/etc/passwd.txt" not in trav.json()["file_path"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_ui_navigation_tabs_separated():
+    from pathlib import Path
+    web_dir = Path(__file__).resolve().parents[1] / "app" / "web"
+    cjs = (web_dir / "control.js").read_text(encoding="utf-8")
+    sjs = (web_dir / "studio.js").read_text(encoding="utf-8")
+
+    for tab in ("AI Connectors", "CRM & ERP Sync", "Company Entities", "Document Templates"):
+        assert tab in cjs
+    for fn in ("renderAIConnectors", "renderCrmSync", "renderCompanyEntities", "renderDocumentTemplates"):
+        assert fn in cjs
+        assert fn in sjs
+
+
+
 
 
 

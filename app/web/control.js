@@ -34,8 +34,10 @@ const navGroups = [
   {
     label: 'INTEGRATIONS & ORG',
     items: [
-      { id: 'AI & CRM Connectors', icon: '🔌', label: 'AI Models & CRM Sync' },
-      { id: 'Company Profile & Offers', icon: '🏢', label: 'Company Profile & PDFs' },
+      { id: 'AI Connectors', icon: '🤖', label: 'AI Model Connectors' },
+      { id: 'CRM & ERP Sync', icon: '🔄', label: 'CRM & ERP Sync' },
+      { id: 'Company Entities', icon: '🏢', label: 'Company Entities' },
+      { id: 'Document Templates', icon: '📄', label: 'Document Templates' },
       { id: 'Analytics & Call Logs', icon: '📊', label: 'Analytics & Call Logs' },
     ]
   }
@@ -220,8 +222,13 @@ function render() {
     return;
   }
 
-  if (section === 'AI & CRM Connectors' && window.PlatformStudioUI) {
-    window.PlatformStudioUI.renderConnectors(root, studioHelpers);
+  if (section === 'AI Connectors' && window.PlatformStudioUI) {
+    window.PlatformStudioUI.renderAIConnectors(root, studioHelpers);
+    return;
+  }
+
+  if (section === 'CRM & ERP Sync' && window.PlatformStudioUI) {
+    window.PlatformStudioUI.renderCrmSync(root, studioHelpers);
     return;
   }
 
@@ -230,8 +237,13 @@ function render() {
     return;
   }
 
-  if (section === 'Company Profile & Offers' && window.PlatformStudioUI) {
-    window.PlatformStudioUI.renderCompanyProfile(root, studioHelpers);
+  if (section === 'Company Entities' && window.PlatformStudioUI) {
+    window.PlatformStudioUI.renderCompanyEntities(root, studioHelpers);
+    return;
+  }
+
+  if (section === 'Document Templates' && window.PlatformStudioUI) {
+    window.PlatformStudioUI.renderDocumentTemplates(root, studioHelpers);
     return;
   }
 

@@ -10,7 +10,7 @@ from typing import Any, Iterable, Optional
 
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 MARKET_FTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS am_market_seeds(

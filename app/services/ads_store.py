@@ -6,7 +6,7 @@ from typing import Any, Iterable, Optional
 from app.services.catalog import catalog_service_label
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 ADS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cc_audit(

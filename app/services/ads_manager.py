@@ -21,7 +21,7 @@ from app.services.catalog import catalog_service_label, resolve_catalog_item
 from app.services.control_store import ControlStore
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 ALMATY_TZ = ZoneInfo("Asia/Almaty")
 MOBILE_PREFIX_RE = re.compile(r"^\+7(?:70\d|747|75\d|76\d|77[15678]|78\d)")
@@ -528,7 +528,6 @@ class AdsManager:
         from app.services.platform_store import PlatformStore
 
         pstore = PlatformStore(self.store.base)
-        company = pstore.get_company_profile()
         telephony = pstore.get_telephony_config()
         daily_cap = int(telephony.get("daily_call_cap") or 200)
         cstore = ControlStore(self.store.base)
@@ -537,6 +536,11 @@ class AdsManager:
             raise ValueError("daily_call_cap_reached")
 
         prod_record = pstore.get_product(lead["product_key"])
+        company = (
+            pstore.get_company_entity(prod_record["company_id"])
+            if prod_record and prod_record.get("company_id")
+            else None
+        ) or pstore.get_company_profile()
         prod_for_script = prod_record or {
             "name": lead["service"] or catalog_service_label(lead["product_key"], lang),
             "name_ru": lead["service"] or catalog_service_label(lead["product_key"], "ru"),

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import base64
 import html as html_lib
+import re
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.api.control_center import auth
@@ -21,7 +24,10 @@ from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
 from app.services.web_scraper import SSRFBlockedError
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
+
+ALLOWED_TEMPLATE_EXTS = {".docx", ".pdf", ".html", ".htm", ".txt", ".md"}
+MAX_TEMPLATE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 router = APIRouter(prefix="/platform/api/studio", tags=["Platform Studio"])
 
@@ -70,6 +76,7 @@ class ProductIn(BaseModel):
     target_use_case: str = Field(default="", max_length=1000)
     pdf_kz: str = Field(default="", max_length=500)
     pdf_ru: str = Field(default="", max_length=500)
+    company_id: int = Field(default=0, ge=0)
     source: str = Field(default="manual", max_length=40)
 
 
@@ -100,6 +107,7 @@ class CompanyProfileIn(BaseModel):
     description: str = Field(default="", max_length=1000)
     default_pdf_kz: str = Field(default="", max_length=500)
     default_pdf_ru: str = Field(default="", max_length=500)
+    is_default: bool = False
 
 
 class TelephonyConfigIn(BaseModel):
@@ -265,7 +273,11 @@ def product_offer_preview(product_id: int, lang: str = "ru", store: PlatformStor
     prod = store.get_product(str(product_id))
     if not prod:
         raise HTTPException(404, "product_not_found")
-    comp = store.get_company_profile()
+    comp = (
+        store.get_company_entity(prod["company_id"])
+        if prod.get("company_id")
+        else None
+    ) or store.get_company_profile()
     is_kz = (lang or "ru").lower() == "kz"
     e = html_lib.escape
 
@@ -652,4 +664,150 @@ async def manual_lead_handoff(
 @router.get("/analytics", dependencies=[Depends(auth)])
 def get_pipeline_analytics(handoff: CRMHandoffService = Depends(studio_handoff)):
     return handoff.get_pipeline_analytics()
+
+
+# ------------------------------------------------------------------
+# 7. Multi-Company Entities (Advertise from Multiple Legal Entities)
+# ------------------------------------------------------------------
+@router.get("/companies", dependencies=[Depends(auth)])
+def list_company_entities(store: PlatformStore = Depends(studio_store)):
+    return {"items": store.list_company_entities()}
+
+
+@router.post("/companies", dependencies=[Depends(auth)])
+def create_company_entity(data: CompanyProfileIn, store: PlatformStore = Depends(studio_store)):
+    return store.save_company_entity(data.model_dump())
+
+
+@router.put("/companies/{entity_id}", dependencies=[Depends(auth)])
+def update_company_entity(entity_id: int, data: CompanyProfileIn, store: PlatformStore = Depends(studio_store)):
+    try:
+        return store.save_company_entity(data.model_dump(), entity_id=entity_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
+
+
+@router.post("/companies/{entity_id}/activate", dependencies=[Depends(auth)])
+def activate_company_entity(entity_id: int, store: PlatformStore = Depends(studio_store)):
+    try:
+        return store.set_default_company_entity(entity_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
+
+
+@router.delete("/companies/{entity_id}", dependencies=[Depends(auth)])
+def delete_company_entity(entity_id: int, store: PlatformStore = Depends(studio_store)):
+    try:
+        if not store.delete_company_entity(entity_id):
+            raise HTTPException(404, "company_entity_not_found")
+        return {"deleted": True, "id": entity_id}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+# ------------------------------------------------------------------
+# 8. Document Templates Library (Offer, Inquiry, Contract, etc.)
+# ------------------------------------------------------------------
+def _templates_dir(store: PlatformStore) -> Path:
+    base_dir = Path(store.base.path).parent / "templates"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir
+
+
+@router.get("/templates", dependencies=[Depends(auth)])
+def list_document_templates(doc_type: str = "", store: PlatformStore = Depends(studio_store)):
+    return {"items": store.list_document_templates(doc_type=doc_type)}
+
+
+@router.post("/templates/upload", dependencies=[Depends(auth)])
+async def upload_document_template(
+    name: str = Form(..., min_length=2, max_length=160),
+    doc_type: str = Form(default="offer"),
+    lang: str = Form(default="ru"),
+    company_id: int = Form(default=0),
+    is_active: bool = Form(default=False),
+    content_text: str = Form(default=""),
+    file: Optional[UploadFile] = File(default=None),
+    store: PlatformStore = Depends(studio_store),
+):
+    norm_type = doc_type.strip().lower()
+    if norm_type not in {"offer", "inquiry", "contract", "presentation", "other"}:
+        raise HTTPException(400, "invalid_doc_type")
+    norm_lang = "kz" if lang.strip().lower() == "kz" else "ru"
+
+    saved_file_name = ""
+    saved_file_path = ""
+    saved_mime = ""
+    extracted_text = (content_text or "").strip()
+
+    if file is not None and file.filename:
+        orig_name = Path(file.filename).name
+        ext = Path(orig_name).suffix.lower()
+        if ext not in ALLOWED_TEMPLATE_EXTS:
+            raise HTTPException(400, f"unsupported_template_extension:{ext}")
+        raw_bytes = await file.read()
+        if len(raw_bytes) > MAX_TEMPLATE_BYTES:
+            raise HTTPException(413, "template_file_too_large")
+
+        safe_base = re.sub(r"[^A-Za-z0-9._\-]", "_", orig_name)[:120]
+        tdir = _templates_dir(store)
+        dest = (tdir / f"{uuid.uuid4().hex[:12]}_{safe_base}").resolve()
+        if not dest.is_relative_to(tdir.resolve()):
+            raise HTTPException(400, "invalid_template_path")
+        dest.write_bytes(raw_bytes)
+        saved_file_name = orig_name
+        saved_file_path = str(dest)
+        saved_mime = file.content_type or "application/octet-stream"
+        if not extracted_text and ext in {".html", ".htm", ".txt", ".md"}:
+            extracted_text = raw_bytes.decode("utf-8", errors="replace")[:30000]
+
+    return store.save_document_template({
+        "name": name,
+        "doc_type": norm_type,
+        "lang": norm_lang,
+        "company_id": company_id,
+        "file_name": saved_file_name,
+        "file_path": saved_file_path,
+        "mime_type": saved_mime,
+        "content_text": extracted_text,
+        "is_active": is_active,
+    })
+
+
+@router.post("/templates/{template_id}/activate", dependencies=[Depends(auth)])
+def activate_document_template(template_id: int, store: PlatformStore = Depends(studio_store)):
+    try:
+        return store.set_active_document_template(template_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
+
+
+@router.get("/templates/{template_id}/download", dependencies=[Depends(auth)])
+def download_document_template(template_id: int, store: PlatformStore = Depends(studio_store)):
+    tpl = store.get_document_template(template_id)
+    if not tpl or not tpl.get("file_path"):
+        raise HTTPException(404, "template_file_not_found")
+    tdir = _templates_dir(store).resolve()
+    target = Path(tpl["file_path"]).resolve()
+    if not target.is_relative_to(tdir) or not target.exists():
+        raise HTTPException(404, "template_file_missing")
+    return FileResponse(target, filename=tpl.get("file_name") or target.name)
+
+
+@router.delete("/templates/{template_id}", dependencies=[Depends(auth)])
+def delete_document_template(template_id: int, store: PlatformStore = Depends(studio_store)):
+    tpl = store.get_document_template(template_id)
+    if not tpl:
+        raise HTTPException(404, "template_not_found")
+    if tpl.get("file_path"):
+        tdir = _templates_dir(store).resolve()
+        target = Path(tpl["file_path"]).resolve()
+        if target.is_relative_to(tdir) and target.exists():
+            try:
+                target.unlink()
+            except OSError:
+                pass
+    store.delete_document_template(template_id)
+    return {"deleted": True, "id": template_id}
+
 

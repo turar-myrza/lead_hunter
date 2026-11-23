@@ -17,7 +17,7 @@ import subprocess
 import shlex
 from typing import List, Optional, Dict, Any
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 DEFAULT_TELEPHONY_HOST = os.getenv("TELEPHONY_HOST", "185.22.64.70")
 DEFAULT_SSH_USER = os.getenv("TELEPHONY_SSH_USER", "debian")
