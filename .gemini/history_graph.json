@@ -103,5 +103,12 @@
     "result_summary": "1) Added strict Asterisk AMI/SIP CRLF injection sanitizers (sanitize_ami_value, validate_sip_phone, validate_transfer_extension) in calling/pbx_caller.py; 2) Enforced isolated product-specific greeting and system_prompt generation via build_call_script_preview across both AdsManager._execute_lead_call and ControlCenter.start_outreach_call with zero legacy CRM Consulting pitch leakage; 3) Added daily_call_cap enforcement via ControlStore.today_outreach_call_count(); 4) Bumped VERSION to 2.6.0, passed all 32 pytest tests on whatflow, and verified live deployment.",
     "parent": "node-2.5.0-step-4-fts5-market-search-and-audience-analyzer",
     "timestamp": "2026-11-23T13:55:00+05:00"
+  },
+  {
+    "id": "node-2.7.0-step-6-bitrix24-crm-handoff-and-analytics",
+    "prompt_summary": "Step 6 of autonomous B2B sales pipeline plan: End-to-End Bitrix24 CRM Handoff, HMAC Webhook Verification, and Pipeline Funnel Analytics (34/34 tests passing, deployed to whatflow)",
+    "result_summary": "1) Created CRMHandoffService in app/services/crm_handoff.py with constant-time HMAC-SHA256 webhook signature verification (verify_webhook_signature), Bitrix24 Contact + Deal + Timeline Comment creation attaching call transcripts and recordings, and end-to-end funnel analytics; 2) Exposed /platform/api/studio/webhooks/call-outcome, /leads/{id}/handoff, and /analytics endpoints in app/api/platform_studio.py; 3) Added End-to-End Autonomous Funnel & CRM Handoff telemetry card in app/web/studio.js; 4) Bumped VERSION to 2.7.0, passed all 34 pytest tests on whatflow, and verified live deployment.",
+    "parent": "node-2.6.0-step-5-isolated-voice-sdr-and-ami-security",
+    "timestamp": "2026-11-23T14:55:00+05:00"
   }
 ]
