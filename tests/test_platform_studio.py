@@ -613,5 +613,82 @@ def test_market_search_api_endpoint_and_csv_indexing(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_ami_crlf_injection_sanitization():
+    from calling.pbx_caller import sanitize_ami_value, validate_sip_phone, validate_transfer_extension
+
+    assert validate_sip_phone("+77056945245") == "+77056945245"
+    for bad_phone in [
+        "+77056945245\r\nAction: Originate",
+        "+77056945245\nSet: x=1",
+        "7705@evil.sip",
+        "+7705;drop",
+        "abc",
+    ]:
+        with pytest.raises(ValueError):
+            validate_sip_phone(bad_phone)
+
+    assert validate_transfer_extension("055") == "055"
+    for bad_ext in ["055\r\nAction: Command", "055;echo pwned", "055/../../etc"]:
+        with pytest.raises(ValueError):
+            validate_transfer_extension(bad_ext)
+
+    cleaned = sanitize_ami_value("Hello\r\nAction: Originate\x00\nChannel: SIP/100")
+    assert "\r" not in cleaned
+    assert "\n" not in cleaned
+    assert "\x00" not in cleaned
+    assert cleaned == "Hello Action: Originate Channel: SIP/100"
+
+
+def test_isolated_call_context_and_daily_cap_enforcement(tmp_path):
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    pstore = PlatformStore(base)
+    astore = AdsStore(base)
+    cstore = ControlStore(base)
+
+    pstore.save_company_profile({"company_name": "ТОО «МедТех Казахстан»"})
+    pstore.save_telephony_config({"voice_name": "Aoede", "transfer_extension": "077", "daily_call_cap": 1})
+
+    camp = astore.create_campaign(name="MedTech Q2", product_key="centrifuges", objective="call_then_offer", lang="kz")
+    aud = astore.create_audience(camp["id"], name="Labs", segment="b2b", rules={"regions": ["almaty"]})
+    astore.upsert_leads(camp["id"], aud["id"], [{
+        "dedupe_key": "med-1",
+        "company": "Almaty BioLab",
+        "city": "Almaty",
+        "phone_raw": "+77056945245",
+        "phone_e164": "+77056945245",
+        "director": "Айдар",
+        "icp_score": 90,
+        "whitelisted": 1,
+    }])
+    lead = astore.list_leads(campaign_id=camp["id"])[0]
+    lead["campaign_status"] = "active"
+    lead["product_key"] = "centrifuges"
+    lead["objective"] = "call_then_offer"
+
+    captured = {}
+
+    def spy_pbx(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "stdout": "Call initiated"}
+
+    mgr = AdsManager(astore, settings, call_pbx=spy_pbx, whitelist_fn=lambda: {"+77056945245"})
+    res = mgr._execute_lead_call(lead, "kz")
+    assert res["success"] is True
+    assert "МедТех Казахстан" in captured["seller"]
+    assert "МедТех Казахстан" in captured["greeting"]
+    assert "центрифуга" in captured["greeting"].lower()
+    assert captured["transfer_target"] == "077"
+    assert "whatsappcalls" not in captured["custom_prompt"].lower()
+    assert "аудиожазбалары" not in captured["custom_prompt"].lower()
+
+    # Now daily_call_cap is 1 and 1 initiated call was logged today -> 2nd call must be blocked!
+    with pytest.raises(ValueError, match="daily_call_cap_reached"):
+        mgr._execute_lead_call(lead, "kz")
+    updated_lead = astore.get_lead(lead["id"])
+    assert updated_lead["status"] == "deferred_cap"
+
+
+
 
 

@@ -73,6 +73,15 @@ class ControlStore:
                        (phone, product, lang, status, str(response), now().isoformat()))
         self.audit('outreach_call', f"{phone}:{product}:{lang}:{status}")
 
+    def today_outreach_call_count(self) -> int:
+        day_prefix = now().date().isoformat()
+        with self.base.connect() as db:
+            row = db.execute(
+                "SELECT COUNT(*) FROM cc_outreach_call WHERE at LIKE ? AND status='initiated'",
+                (f"{day_prefix}%",),
+            ).fetchone()
+        return int(row[0]) if row else 0
+
     def log_outreach_offer(self, phone: str, product: str, lang: str, template: str, pdf_url: str, status: str, wamid: str = "", error: str = ""):
         with self.base.connect() as db:
             db.execute('INSERT INTO cc_outreach_offer(phone, product, lang, template, pdf_url, status, wamid, error, at) VALUES(?,?,?,?,?,?,?,?,?)',

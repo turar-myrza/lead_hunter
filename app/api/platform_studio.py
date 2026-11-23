@@ -20,7 +20,7 @@ from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
 from app.services.web_scraper import SSRFBlockedError
 
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 
 router = APIRouter(prefix="/platform/api/studio", tags=["Platform Studio"])
 

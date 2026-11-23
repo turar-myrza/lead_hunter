@@ -119,6 +119,7 @@ def outreach_history(svc=Depends(service)):
 @router.post('/api/outreach/call',dependencies=[Depends(auth)])
 def start_outreach_call(data:CallRequest,svc=Depends(service)):
     from calling.pbx_caller import call_lead
+    from app.services.ai_engine import build_call_script_preview
     pstore = PlatformStore(svc.store.base)
     company = pstore.get_company_profile()
     telephony = pstore.get_telephony_config()
@@ -128,24 +129,39 @@ def start_outreach_call(data:CallRequest,svc=Depends(service)):
     details=data.details.strip()
     seller=(data.seller or company.get('company_name') or '').strip()
     voice=(data.voice or telephony.get('voice_name') or 'Kore').strip()
-    greeting=(data.greeting or (telephony.get('custom_greeting_kz') if lang=='kz' else telephony.get('custom_greeting_ru')) or '').strip()
-    custom_prompt=(data.custom_prompt or (telephony.get('custom_prompt_kz') if lang=='kz' else telephony.get('custom_prompt_ru')) or '').strip()
+    raw_greeting=(data.greeting or (telephony.get('custom_greeting_kz') if lang=='kz' else telephony.get('custom_greeting_ru')) or '').strip()
+    raw_prompt=(data.custom_prompt or (telephony.get('custom_prompt_kz') if lang=='kz' else telephony.get('custom_prompt_ru')) or '').strip()
     transfer=(telephony.get('transfer_extension') or '055').strip()
 
-    res=call_lead(
-        phone=phone,
-        products=[product],
-        details=details,
+    prod_rec = pstore.get_product(product) or {"name": product, "name_ru": product, "price_range": "", "specs": details}
+    isolated = build_call_script_preview(
+        product=prod_rec,
+        company={"company_name": seller or company.get("company_name", "")},
+        telephony={**telephony, "voice_name": voice, "transfer_extension": transfer},
         lang=lang,
-        greeting=greeting,
-        seller=seller,
-        voice=voice,
-        custom_prompt=custom_prompt,
-        transfer_target=transfer,
-        host=svc.settings.telephony_host,
-        user=svc.settings.telephony_ssh_user,
-        remote_script=svc.settings.telephony_caller_script,
+        custom_greeting=raw_greeting,
+        custom_prompt=raw_prompt,
     )
+    greeting = isolated["greeting"]
+    custom_prompt = isolated["system_prompt"]
+
+    try:
+        res=call_lead(
+            phone=phone,
+            products=[product],
+            details=details or isolated["details_sent_to_pbx"],
+            lang=lang,
+            greeting=greeting,
+            seller=isolated["seller_company"],
+            voice=voice,
+            custom_prompt=custom_prompt,
+            transfer_target=transfer,
+            host=svc.settings.telephony_host,
+            user=svc.settings.telephony_ssh_user,
+            remote_script=svc.settings.telephony_caller_script,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
     status='initiated' if res.get('success') else 'failed'
     response_text=(res.get('stdout','') or res.get('stderr',''))[:500]
     svc.store.log_outreach_call(phone,product,lang,status,response_text)

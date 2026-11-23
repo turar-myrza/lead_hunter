@@ -7,20 +7,51 @@ Supports:
 - Local execution if running directly on telephony VPS (/home/debian/bitrix_pbx)
   or Windows dev mount (/mnt/d/projects/bitrix_pbx).
 - Authenticated SSH execution from whatflow (195.49.210.252) to ai_telephony (185.22.64.70).
+- Strict Asterisk AMI / SIP CRLF injection sanitization.
 """
 
 import os
+import re
 import sys
 import subprocess
 import shlex
 from typing import List, Optional, Dict, Any
 
-VERSION = "2.0.0"
+VERSION = "2.6.0"
 
 DEFAULT_TELEPHONY_HOST = os.getenv("TELEPHONY_HOST", "185.22.64.70")
 DEFAULT_SSH_USER = os.getenv("TELEPHONY_SSH_USER", "debian")
 DEFAULT_REMOTE_SCRIPT = os.getenv("TELEPHONY_CALLER_SCRIPT", "/home/debian/bitrix_pbx/outbound_caller.py")
 LOCAL_DEV_SCRIPT = "/mnt/d/projects/bitrix_pbx/outbound_caller.py"
+
+
+def sanitize_ami_value(value: str, max_len: int = 1200) -> str:
+    """Strip CR, LF, NUL, and control characters to prevent Asterisk AMI protocol injection."""
+    if not value:
+        return ""
+    # Replace CR, LF, NUL, tabs, and other C0 control chars with a single space
+    cleaned = re.sub(r"[\r\n\x00-\x1f\x7f]+", " ", str(value))
+    return re.sub(r"\s{2,}", " ", cleaned).strip()[:max_len]
+
+
+def validate_sip_phone(phone: str) -> str:
+    """Validate phone number contains only optional leading '+' and 7-15 digits (zero CRLF/SIP injection)."""
+    raw = (phone or "").strip()
+    if any(ch in raw for ch in ("\r", "\n", "\x00", ";", "@", "/", ":")):
+        raise ValueError("invalid_sip_phone_characters")
+    if not re.fullmatch(r"\+?[0-9]{7,15}", raw):
+        raise ValueError("invalid_sip_phone_format")
+    return raw
+
+
+def validate_transfer_extension(ext: str) -> str:
+    """Validate Asterisk transfer extension contains only safe alphanumeric/underscore/hyphen characters."""
+    raw = (ext or "").strip()
+    if not raw:
+        return "055"
+    if not re.fullmatch(r"[0-9A-Za-z_\-]{1,32}", raw):
+        raise ValueError("invalid_transfer_extension")
+    return raw
 
 
 def call_lead(
@@ -41,33 +72,46 @@ def call_lead(
 ) -> Dict[str, Any]:
     """
     Triggers an outbound AI call to a target lead via Bitrix PBX Asterisk gateway.
+    All SIP and AMI parameters are strictly sanitized against CRLF injection.
     """
+    safe_phone = validate_sip_phone(phone)
+    safe_lang = "kz" if (lang or "kz").strip().lower() == "kz" else "ru"
+    safe_products = [sanitize_ami_value(p, max_len=200) for p in products if sanitize_ami_value(p)]
+    safe_details = sanitize_ami_value(details, max_len=1500)
+    safe_ceo = sanitize_ami_value(ceo, max_len=120)
+    safe_biz = sanitize_ami_value(biz, max_len=160)
+    safe_greeting = sanitize_ami_value(greeting, max_len=1000)
+    safe_seller = sanitize_ami_value(seller, max_len=200)
+    safe_voice = re.sub(r"[^A-Za-z0-9_\-]", "", (voice or "Kore").strip())[:40] or "Kore"
+    safe_prompt = sanitize_ami_value(custom_prompt, max_len=3000)
+    safe_transfer = validate_transfer_extension(transfer_target or "055")
+
     is_local = os.path.exists(DEFAULT_REMOTE_SCRIPT)
     is_dev = os.path.exists(LOCAL_DEV_SCRIPT)
 
-    args = [phone, "--lang", lang]
-    for p in products:
+    args = [safe_phone, "--lang", safe_lang]
+    for p in safe_products:
         args.extend(["--product", p])
-    if details:
-        args.extend(["--details", details])
-    if ceo:
-        args.extend(["--ceo", ceo])
-    if biz:
-        args.extend(["--biz", biz])
-    if greeting:
-        args.extend(["--greeting", greeting])
-    if seller:
-        args.extend(["--seller", seller])
-    if voice:
-        args.extend(["--voice", voice])
-    if custom_prompt:
-        args.extend(["--prompt", custom_prompt])
-    if transfer_target:
-        args.extend(["--transfer", transfer_target])
+    if safe_details:
+        args.extend(["--details", safe_details])
+    if safe_ceo:
+        args.extend(["--ceo", safe_ceo])
+    if safe_biz:
+        args.extend(["--biz", safe_biz])
+    if safe_greeting:
+        args.extend(["--greeting", safe_greeting])
+    if safe_seller:
+        args.extend(["--seller", safe_seller])
+    if safe_voice:
+        args.extend(["--voice", safe_voice])
+    if safe_prompt:
+        args.extend(["--prompt", safe_prompt])
+    if safe_transfer:
+        args.extend(["--transfer", safe_transfer])
 
     if is_local:
         cmd = [sys.executable, DEFAULT_REMOTE_SCRIPT] + args
-        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Local AI call to {phone}...")
+        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Local AI call to {safe_phone}...")
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         return {
             "success": res.returncode == 0,
@@ -78,7 +122,7 @@ def call_lead(
         }
     elif is_dev:
         cmd = [sys.executable, LOCAL_DEV_SCRIPT] + args
-        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Dev AI call to {phone}...")
+        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Dev AI call to {safe_phone}...")
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         return {
             "success": res.returncode == 0,
@@ -109,7 +153,7 @@ def call_lead(
             remote_cmd_str,
         ])
 
-        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Remote SSH AI call via {target_host} to {phone}...")
+        print(f"\n[Lead Hunter PBX Bridge v{VERSION}] Remote SSH AI call via {target_host} to {safe_phone}...")
         res = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=120)
         return {
             "success": res.returncode == 0,
