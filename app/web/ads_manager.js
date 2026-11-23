@@ -12,6 +12,7 @@ window.AdsManagerUI = (function () {
     selectedCampaigns: new Set(),
     selectedAudiences: new Set(),
     selectedLeads: new Set(),
+    hideUnselected: false,
     search: '',
     statusFilter: 'all',
     loaded: false,
@@ -615,13 +616,18 @@ window.AdsManagerUI = (function () {
     thead.append(trh);
     table.append(thead);
 
+    const visibleCampaigns = (S.hideUnselected && S.selectedCampaigns.size)
+      ? S.campaigns.filter(c => S.selectedCampaigns.has(c.id))
+      : S.campaigns;
+
     const tbody = el('tbody');
-    for (const c of S.campaigns) {
+    for (const c of visibleCampaigns) {
       const tr = el('tr');
       const tdChk = el('td');
       tdChk.append(makeCheckbox(S.selectedCampaigns.has(c.id), async chk => {
         if (chk) S.selectedCampaigns.add(c.id);
         else S.selectedCampaigns.delete(c.id);
+        S.selectedAudiences.clear();
         await loadAll(true);
       }));
       tr.append(tdChk);
@@ -687,8 +693,12 @@ window.AdsManagerUI = (function () {
     thead.append(trh);
     table.append(thead);
 
+    const visibleAudiences = (S.hideUnselected && S.selectedAudiences.size)
+      ? S.audiences.filter(a => S.selectedAudiences.has(a.id))
+      : S.audiences;
+
     const tbody = el('tbody');
-    for (const a of S.audiences) {
+    for (const a of visibleAudiences) {
       const tr = el('tr');
       const tdChk = el('td');
       tdChk.append(makeCheckbox(S.selectedAudiences.has(a.id), async chk => {
@@ -891,6 +901,17 @@ window.AdsManagerUI = (function () {
       else openAudienceDrawer(null);
     }, 'am-create-btn'));
 
+    if (S.tab === 'campaigns' && S.selectedCampaigns.size > 0) {
+      leftGrp.append(S.ctx.button(
+        S.hideUnselected ? '👁️ Show All Campaigns' : `🔍 Hide Unselected (${S.selectedCampaigns.size})`,
+        () => {
+          S.hideUnselected = !S.hideUnselected;
+          renderDynamic();
+        },
+        S.hideUnselected ? 'primary-btn' : 'secondary-btn'
+      ));
+    }
+
     if (S.tab === 'campaigns' && S.selectedCampaigns.size === 1) {
       const cid = Array.from(S.selectedCampaigns)[0];
       const camp = S.campaigns.find(c => c.id === cid);
@@ -906,6 +927,16 @@ window.AdsManagerUI = (function () {
     }
 
     if (S.tab === 'audiences') {
+      if (S.selectedAudiences.size > 0) {
+        leftGrp.append(S.ctx.button(
+          S.hideUnselected ? '👁️ Show All Audiences' : `🔍 Hide Unselected (${S.selectedAudiences.size})`,
+          () => {
+            S.hideUnselected = !S.hideUnselected;
+            renderDynamic();
+          },
+          S.hideUnselected ? 'primary-btn' : 'secondary-btn'
+        ));
+      }
       if (S.selectedAudiences.size === 1) {
         const aid = Array.from(S.selectedAudiences)[0];
         const aud = S.audiences.find(a => a.id === aid);

@@ -896,7 +896,7 @@ window.PlatformStudioUI = (() => {
         }, 'primary-btn'));
       }
       add(acts,
-        button('Edit', async () => openCompanyModal(c, h, async () => {
+        button('✏️ Edit Company', async () => openCompanyModal(c, h, async () => {
           if (onRefreshState) await onRefreshState(false);
           renderCompanyEntities(root, h);
         }), 'secondary-btn'),
