@@ -89,5 +89,12 @@
     "result_summary": "1) Created SSRF-safe web_scraper.py blocking private/loopback/metadata IPs, unsafe schemes, and malicious redirects while converting HTML pages to clean Markdown via BeautifulSoup4 + lxml; 2) Added strict Pydantic v2 ProductResearchSchema validation (name_kz, name_ru, category, price_range_kzt, models, specs, certifications, target_use_case) in ai_engine.py; 3) Added certifications column migration to PlatformStore; 4) Built XSS-safe Commercial Offer HTML/PDF preview endpoint (/products/{id}/offer-preview) and UI preview button; 5) Bumped VERSION to 2.4.0, passed all 27 pytest tests (catching and fixing an SSRF ValueError inheritance edge case), and deployed live to whatflow.",
     "parent": "node-2.3.0-step-2-ai-model-router-and-token-connectors",
     "timestamp": "2026-11-23T13:05:00+05:00"
+  },
+  {
+    "id": "node-2.5.0-step-4-fts5-market-search-and-audience-analyzer",
+    "prompt_summary": "Step 4 of autonomous B2B sales pipeline plan: Prompt-to-Audience Market Analyzer (SQLite FTS5 BM25 sub-50ms search over 100k+ seeds, SQLi sanitization, live Market Seed Explorer UI, 30/30 tests passing, deployed to whatflow)",
+    "result_summary": "1) Built MarketSearchEngine in app/services/market_search.py with SQLite FTS5 virtual table (unicode61 diacritic normalization), automatic triggers, BM25 ranking, and CSV seed ingestion; 2) Added parameterized query and FTS5 operator sanitization preventing SQL injection; 3) Exposed /platform/api/studio/audiences/search-seeds and /reindex, and enriched AI audience segments with real matched_seed_count; 4) Added Live FTS5 Market Seed Explorer UI card in app/web/studio.js; 5) Bumped VERSION to 2.5.0, verified 100,000-row query under 50ms and 30/30 pytest tests pass, and deployed live to whatflow.",
+    "parent": "node-2.4.0-step-3-prompt-to-product-scraper-and-pydantic",
+    "timestamp": "2026-11-23T13:34:00+05:00"
   }
 ]
