@@ -75,5 +75,12 @@
     "result_summary": "1) Solved the List View / Grid View DOM element duplication bug by introducing isolated itemsContainer with replaceChildren() in app/web/studio.js; 2) Enforced clean root re-renders for all studio views and decoupled draft card containers; 3) Added unit and DOM regression tests in tests/test_platform_studio.py (test_control_html_includes_declarative_scripts_and_cache_busting, test_xss_escaping_in_script_preview); 4) Bumped VERSION to 2.2.0 across all 10 core modules and added ?v=2.2.0 cache-busting asset query parameters; 5) Deployed to production (whatflow 195.49.210.252) and verified all 20 tests passed.",
     "parent": "node-1.7.0-ads-manager-interface",
     "timestamp": "2026-11-23T12:45:00+05:00"
+  },
+  {
+    "id": "node-2.3.0-step-2-ai-model-router-and-token-connectors",
+    "prompt_summary": "Step 2 of autonomous B2B sales pipeline plan: AI Model Router & Token Connector (model tiers, 429 automatic rate-limit fallback, token spend tracking, ping tests, 24/24 tests passing, deployed to whatflow)",
+    "result_summary": "1) Integrated multi-provider router supporting model tiers (research_tier, reasoning_tier, test_tier) in app/services/ai_engine.py; 2) Implemented automatic rate-limit fallback routing: seamless failover across candidates upon HTTP 429 or 5xx; 3) Created durable am_ai_usage table tracking prompt/completion tokens, latency, and estimated USD/KZT costs; 4) Added /platform/api/studio/connectors/models/{id}/ping and /platform/api/studio/ai-usage endpoints with live telemetry banner in UI; 5) Enforced zero-plain-text key leakage in errors and client tracebacks; 6) Bumped VERSION to 2.3.0 across 10 modules, verified 24/24 pytest tests pass, and deployed live to whatflow.",
+    "parent": "node-2.2.0-step-1-declarative-frontend-rebuild",
+    "timestamp": "2026-11-23T12:55:00+05:00"
   }
 ]
