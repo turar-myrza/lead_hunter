@@ -96,5 +96,12 @@
     "result_summary": "1) Built MarketSearchEngine in app/services/market_search.py with SQLite FTS5 virtual table (unicode61 diacritic normalization), automatic triggers, BM25 ranking, and CSV seed ingestion; 2) Added parameterized query and FTS5 operator sanitization preventing SQL injection; 3) Exposed /platform/api/studio/audiences/search-seeds and /reindex, and enriched AI audience segments with real matched_seed_count; 4) Added Live FTS5 Market Seed Explorer UI card in app/web/studio.js; 5) Bumped VERSION to 2.5.0, verified 100,000-row query under 50ms and 30/30 pytest tests pass, and deployed live to whatflow.",
     "parent": "node-2.4.0-step-3-prompt-to-product-scraper-and-pydantic",
     "timestamp": "2026-11-23T13:34:00+05:00"
+  },
+  {
+    "id": "node-2.6.0-step-5-isolated-voice-sdr-and-ami-security",
+    "prompt_summary": "Step 5 of autonomous B2B sales pipeline plan: Isolated Voice SDR Telephony & Asterisk PBX Engine (AMI CRLF injection sanitization, isolated call script context, daily call cap enforcement, 32/32 tests passing, deployed to whatflow)",
+    "result_summary": "1) Added strict Asterisk AMI/SIP CRLF injection sanitizers (sanitize_ami_value, validate_sip_phone, validate_transfer_extension) in calling/pbx_caller.py; 2) Enforced isolated product-specific greeting and system_prompt generation via build_call_script_preview across both AdsManager._execute_lead_call and ControlCenter.start_outreach_call with zero legacy CRM Consulting pitch leakage; 3) Added daily_call_cap enforcement via ControlStore.today_outreach_call_count(); 4) Bumped VERSION to 2.6.0, passed all 32 pytest tests on whatflow, and verified live deployment.",
+    "parent": "node-2.5.0-step-4-fts5-market-search-and-audience-analyzer",
+    "timestamp": "2026-11-23T13:55:00+05:00"
   }
 ]
