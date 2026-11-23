@@ -221,7 +221,7 @@ class PlatformStore:
     # ------------------------------------------------------------------
     def list_ai_providers(self, include_secrets: bool = False) -> list[dict]:
         with self.base.connect() as db:
-            rows = [dict(r) for r in db.execute("SELECT * FROM am_ai_providers ORDER BY is_active DESC, id DESC").fetchall()]
+            rows = [dict(r) for r in db.execute("SELECT * FROM am_ai_providers ORDER BY is_active DESC, id ASC").fetchall()]
         result = []
         for r in rows:
             r["is_active"] = bool(r["is_active"])

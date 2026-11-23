@@ -12,7 +12,7 @@ from app.core.config import Settings, get_settings
 from app.main import app
 from app.services.ads_manager import AdsManager
 from app.services.ads_store import AdsStore
-from app.services.ai_engine import AIEngine, build_call_script_preview
+from app.services.ai_engine import AIEngine, AIEngineError, build_call_script_preview
 from app.services.control_center import ControlCenter
 from app.services.control_store import ControlStore
 from app.services.platform_store import PlatformStore
