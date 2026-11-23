@@ -651,7 +651,9 @@ def test_isolated_call_context_and_daily_cap_enforcement(tmp_path):
 
     camp = astore.create_campaign(name="MedTech Q2", product_key="centrifuges", objective="call_then_offer", lang="kz")
     aud = astore.create_audience(camp["id"], name="Labs", segment="b2b", rules={"regions": ["almaty"]})
-    astore.upsert_leads(camp["id"], aud["id"], [{
+    astore.upsert_leads([{
+        "campaign_id": camp["id"],
+        "audience_id": aud["id"],
         "dedupe_key": "med-1",
         "company": "Almaty BioLab",
         "city": "Almaty",
