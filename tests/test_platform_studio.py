@@ -674,7 +674,7 @@ def test_isolated_call_context_and_daily_cap_enforcement(tmp_path):
         captured.update(kwargs)
         return {"success": True, "stdout": "Call initiated"}
 
-    mgr = AdsManager(astore, settings, call_pbx=spy_pbx, whitelist_fn=lambda: {"+77056945245"})
+    mgr = AdsManager(astore, settings, call_fn=spy_pbx, whitelist_fn=lambda: {"+77056945245"})
     res = mgr._execute_lead_call(lead, "kz")
     assert res["success"] is True
     assert "МедТех Казахстан" in captured["seller"]
