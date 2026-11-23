@@ -606,8 +606,7 @@ async def webhook_call_outcome(
     """Cryptographically verified webhook receiving PBX call outcomes and creating Bitrix24 Deals."""
     raw_body = await request.body()
     sig = request.headers.get("X-LeadHunter-Signature", "")
-    settings = get_settings()
-    secret = settings.lead_hunter_api_token.get_secret_value() if settings.lead_hunter_api_token else ""
+    secret = handoff.settings.lead_hunter_api_token.get_secret_value() if handoff.settings.lead_hunter_api_token else ""
     if not verify_webhook_signature(raw_body, sig, secret):
         raise HTTPException(401, "invalid_webhook_signature")
 
