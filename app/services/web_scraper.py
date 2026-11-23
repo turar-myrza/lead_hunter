@@ -59,13 +59,16 @@ def validate_public_url(url: str, resolve_dns: bool = True) -> str:
         raise SSRFBlockedError(f"ssrf_blocked_hostname:{hostname}")
 
     # Direct IP literal check
+    ip_obj = None
     try:
-        ipaddress.ip_address(hostname)
+        ip_obj = ipaddress.ip_address(hostname)
+    except ValueError:
+        ip_obj = None
+
+    if ip_obj is not None:
         if _is_unsafe_ip(hostname):
             raise SSRFBlockedError(f"ssrf_blocked_private_ip:{hostname}")
         return raw
-    except ValueError:
-        pass
 
     if resolve_dns:
         try:
