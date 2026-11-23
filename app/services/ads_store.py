@@ -6,7 +6,26 @@ from typing import Any, Iterable, Optional
 from app.services.catalog import catalog_service_label
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
+
+LEAD_SORT_COLUMNS = {
+    "company": "LOWER(l.company)",
+    "bin": "l.bin",
+    "city": "LOWER(l.city)",
+    "category": "LOWER(l.category)",
+    "service": "LOWER(l.service)",
+    "director": "LOWER(l.director)",
+    "phone": "l.phone_e164",
+    "phone_e164": "l.phone_e164",
+    "contract_sum_kzt": "COALESCE(l.contract_sum_kzt, -1)",
+    "icp_score": "l.icp_score",
+    "source": "LOWER(l.source)",
+    "status": "l.status",
+    "whitelisted": "l.whitelisted",
+    "enabled": "l.enabled",
+    "created": "l.id",
+    "id": "l.id",
+}
 
 ADS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cc_audit(
@@ -429,6 +448,8 @@ class AdsStore:
         q: Optional[str] = None,
         limit: int = 200,
         offset: int = 0,
+        sort_by: Optional[str] = None,
+        sort_dir: str = "desc",
     ) -> dict[str, Any]:
         where = ["1=1"]
         params: list[Any] = []
@@ -446,6 +467,13 @@ class AdsStore:
             where.append("(l.company LIKE ? OR l.bin LIKE ? OR l.phone_e164 LIKE ? OR l.phone_raw LIKE ? OR l.category LIKE ?)")
             params.extend([like, like, like, like, like])
 
+        sort_col = LEAD_SORT_COLUMNS.get((sort_by or "").strip().lower())
+        direction = "ASC" if (sort_dir or "").strip().lower() == "asc" else "DESC"
+        if sort_col:
+            order_sql = f"{sort_col} {direction}, l.id DESC"
+        else:
+            order_sql = "l.whitelisted DESC, l.icp_score DESC, l.id DESC"
+
         where_sql = " AND ".join(where)
         base_sql = f"""
             FROM am_lead l
@@ -462,7 +490,7 @@ class AdsStore:
                     SELECT l.*, c.name AS campaign_name, c.product_key, c.objective, c.lang AS campaign_lang,
                            c.status AS campaign_status, a.name AS audience_name, a.segment
                     {base_sql}
-                    ORDER BY l.whitelisted DESC, l.icp_score DESC, l.id DESC
+                    ORDER BY {order_sql}
                     LIMIT ? OFFSET ?
                     """,
                     [*params, limit, offset],
@@ -503,6 +531,68 @@ class AdsStore:
                 raise ValueError("lead_not_found")
         self.audit("am_lead_toggled", f"{lead_id}:{int(enabled)}")
         return self.get_lead(lead_id)
+
+    def update_lead(self, lead_id: int, fields: dict[str, Any]) -> dict:
+        """Update editable attributes of a lead cleanly."""
+        existing = self.get_lead(lead_id)
+        if not existing:
+            raise ValueError("lead_not_found")
+        ts = now().isoformat()
+        company = (fields.get("company") or existing["company"]).strip()
+        bin_val = (fields["bin"] if "bin" in fields else existing.get("bin") or "").strip()
+        city = (fields["city"] if "city" in fields else existing.get("city") or "").strip()
+        category = (fields["category"] if "category" in fields else existing.get("category") or "").strip()
+        service = (fields["service"] if "service" in fields else existing.get("service") or "").strip()
+        director = (fields["director"] if "director" in fields else existing.get("director") or "").strip()
+        phone_raw = (fields["phone_raw"] if "phone_raw" in fields else existing.get("phone_raw") or "").strip()
+        phone_e164 = (fields["phone_e164"] if "phone_e164" in fields else existing.get("phone_e164") or "").strip()
+        email = (fields["email"] if "email" in fields else existing.get("email") or "").strip()
+        contract_sum = fields["contract_sum_kzt"] if "contract_sum_kzt" in fields else existing.get("contract_sum_kzt")
+        icp_score = int(fields["icp_score"]) if fields.get("icp_score") is not None else int(existing.get("icp_score") or 0)
+        status = (fields.get("status") or existing.get("status") or "new").strip()
+        source_url = (fields["source_url"] if "source_url" in fields else existing.get("source_url") or "").strip()
+        enabled = int(bool(fields["enabled"])) if fields.get("enabled") is not None else int(bool(existing.get("enabled", True)))
+        whitelisted = int(bool(fields["whitelisted"])) if "whitelisted" in fields else int(bool(existing.get("whitelisted", False)))
+
+        with self.base.connect() as db:
+            db.execute(
+                """
+                UPDATE am_lead
+                SET company=?, bin=?, city=?, category=?, service=?, director=?,
+                    phone_raw=?, phone_e164=?, email=?, contract_sum_kzt=?,
+                    icp_score=?, status=?, source_url=?, enabled=?, whitelisted=?, updated=?
+                WHERE id=?
+                """,
+                (
+                    company,
+                    bin_val,
+                    city,
+                    category,
+                    service,
+                    director,
+                    phone_raw,
+                    phone_e164,
+                    email,
+                    contract_sum,
+                    max(0, min(100, icp_score)),
+                    status,
+                    source_url,
+                    enabled,
+                    whitelisted,
+                    ts,
+                    lead_id,
+                ),
+            )
+        self.audit("am_lead_updated", f"{lead_id}:{company[:60]}")
+        return self.get_lead(lead_id)  # type: ignore[return-value]
+
+    def delete_lead(self, lead_id: int) -> bool:
+        with self.base.connect() as db:
+            db.execute("DELETE FROM am_dial_queue WHERE lead_id=?", (lead_id,))
+            rc = db.execute("DELETE FROM am_lead WHERE id=?", (lead_id,)).rowcount
+        if rc > 0:
+            self.audit("am_lead_deleted", lead_id)
+        return rc > 0
 
     def update_lead_status(self, lead_id: int, status: str, last_result: Optional[str] = None) -> None:
         with self.base.connect() as db:

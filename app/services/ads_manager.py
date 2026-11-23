@@ -21,7 +21,7 @@ from app.services.catalog import catalog_service_label, resolve_catalog_item
 from app.services.control_store import ControlStore
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 
 KZ_LIVE_SOURCES = {"satu_kz", "uchet_pk", "twogis", "egov_open_data", "statsnet", "e_ondiris"}
 

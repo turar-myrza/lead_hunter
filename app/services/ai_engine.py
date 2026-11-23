@@ -15,7 +15,7 @@ from app.core.config import Settings
 from app.services.platform_store import PlatformStore
 from app.services.web_scraper import SSRFBlockedError, fetch_url_markdown
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 logger = logging.getLogger("lead_hunter.ai_engine")
 
 

@@ -29,7 +29,7 @@ from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
 from app.services.web_scraper import SSRFBlockedError
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 
 ALLOWED_TEMPLATE_EXTS = {".docx", ".pdf", ".html", ".htm", ".txt", ".md"}
 MAX_TEMPLATE_BYTES = 10 * 1024 * 1024  # 10 MB

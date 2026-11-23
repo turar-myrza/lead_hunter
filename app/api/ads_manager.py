@@ -10,15 +10,15 @@ from fastapi.responses import StreamingResponse
 
 from app.api.control_center import auth
 from app.core.config import get_settings
-from app.models.ads_manager import AudienceIn, CampaignIn, KATO_MAP, QueueIn, ToggleIn
-from app.services.ads_manager import AdsManager, ALMATY_TZ, is_dial_window
+from app.models.ads_manager import AudienceIn, CampaignIn, KATO_MAP, LeadUpdateIn, QueueIn, ToggleIn
+from app.services.ads_manager import AdsManager, ALMATY_TZ, is_dial_window, normalize_kz_phones
 from app.services.ads_store import AdsStore
 from app.services.catalog import CATALOG
 from app.services.platform_store import PlatformStore
 from app.services.sales_store import SalesStore, now
 from version import VERSION as APP_VERSION
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 
 router = APIRouter(prefix="/platform/api/ads", tags=["Ads manager"])
 
@@ -181,6 +181,8 @@ def list_leads(
     audience_ids: Optional[str] = None,
     status: Optional[str] = None,
     q: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
     limit: int = 200,
     offset: int = 0,
     mgr: AdsManager = Depends(ads_service),
@@ -194,7 +196,27 @@ def list_leads(
         q=q,
         limit=safe_limit,
         offset=safe_offset,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
+
+
+@router.put("/leads/{lead_id}", dependencies=[Depends(auth)])
+def update_lead(lead_id: int, data: LeadUpdateIn, mgr: AdsManager = Depends(ads_service)):
+    payload = data.model_dump()
+    phones = normalize_kz_phones(payload.get("phone_raw") or "")
+    phone_e164 = phones[0] if phones else ""
+    whitelist = mgr.fetch_whitelist()
+    payload["phone_e164"] = phone_e164
+    payload["whitelisted"] = bool(phone_e164 and phone_e164 in whitelist)
+    return _invoke(lambda: mgr.store.update_lead(lead_id, payload))
+
+
+@router.delete("/leads/{lead_id}", dependencies=[Depends(auth)])
+def delete_lead(lead_id: int, mgr: AdsManager = Depends(ads_service)):
+    if not mgr.store.delete_lead(lead_id):
+        raise HTTPException(404, "lead_not_found")
+    return {"deleted": True, "id": lead_id}
 
 
 @router.post("/leads/{lead_id}/toggle", dependencies=[Depends(auth)])
@@ -235,6 +257,8 @@ def export_leads_csv(
     audience_ids: Optional[str] = None,
     status: Optional[str] = None,
     q: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
     mgr: AdsManager = Depends(ads_service),
 ):
     data = mgr.store.list_leads(
@@ -244,6 +268,8 @@ def export_leads_csv(
         q=q,
         limit=5000,
         offset=0,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     buf = io.StringIO()
     buf.write("\ufeff")

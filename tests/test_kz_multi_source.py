@@ -599,7 +599,124 @@ def test_ui_includes_kz_multi_source_harvester_and_enrich_button():
     assert "/studio/discovery/harvest" in studio_js
     assert "/studio/discovery/enrich-bin" in studio_js
     assert "/studio/discovery/import-bulk" in studio_js
+    assert "Categories from Previous Menu" in studio_js
+    assert "syncAudienceSelectionsToHarvester" in studio_js
     assert "KZ Data Harvester" in control_js
     assert "/studio/discovery/enrich-bin" in ads_js
-    assert "?v=2.9.0" in control_html
+    assert "openLeadDrawer" in ads_js
+    assert "makeSortableTh" in ads_js
+    assert "?v=2.9.1" in control_html
+
+
+def test_lead_edit_delete_and_sql_safe_sorting_api(tmp_path):
+    from app.api.ads_manager import ads_service
+
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    astore = AdsStore(base)
+    mgr = AdsManager(
+        astore,
+        settings,
+        clock=lambda: datetime(2026, 11, 23, 6, 0, tzinfo=timezone.utc),
+        whitelist_fn=lambda: {"+77056945245"},
+    )
+    camp = astore.create_campaign("Sort & Edit Camp", "centrifuges", "call_then_offer", "ru")
+    aud = astore.create_audience(camp["id"], "Med Labs", "b2b", {"regions": ["all"], "sources": ["manual_import"]})
+    astore.upsert_leads([
+        {
+            "campaign_id": camp["id"],
+            "audience_id": aud["id"],
+            "company": "Zeta Clinic",
+            "bin": "333333333333",
+            "city": "Shymkent",
+            "category": "Clinic",
+            "service": "Centrifuges",
+            "director": "Zhanar",
+            "phone_raw": "+77010000001",
+            "phone_e164": "+77010000001",
+            "contract_sum_kzt": 100000.0,
+            "icp_score": 50,
+            "whitelisted": False,
+        },
+        {
+            "campaign_id": camp["id"],
+            "audience_id": aud["id"],
+            "company": "Alpha BioLab",
+            "bin": "111111111111",
+            "city": "Almaty",
+            "category": "Lab",
+            "service": "Centrifuges",
+            "director": "Aidar",
+            "phone_raw": "+77010000002",
+            "phone_e164": "+77010000002",
+            "contract_sum_kzt": 950000.0,
+            "icp_score": 90,
+            "whitelisted": False,
+        },
+    ])
+
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[ads_service] = lambda: mgr
+    app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+    try:
+        with TestClient(app, base_url="https://testserver") as client:
+            h = {"X-Control-Request": "1"}
+            assert client.post("/platform/api/login", json={"password": "kz-test-secret"}, headers=h).status_code == 200
+
+            # 1. Sort by company ASC vs DESC
+            r_asc = client.get(f"/platform/api/ads/leads?campaign_ids={camp['id']}&sort_by=company&sort_dir=asc", headers=h)
+            assert r_asc.status_code == 200
+            assert [x["company"] for x in r_asc.json()["items"]] == ["Alpha BioLab", "Zeta Clinic"]
+
+            r_desc = client.get(f"/platform/api/ads/leads?campaign_ids={camp['id']}&sort_by=company&sort_dir=desc", headers=h)
+            assert [x["company"] for x in r_desc.json()["items"]] == ["Zeta Clinic", "Alpha BioLab"]
+
+            # 2. Sort by contract_sum_kzt DESC & SQL injection attempt on sort_by/sort_dir safely falls back
+            r_sum = client.get(f"/platform/api/ads/leads?campaign_ids={camp['id']}&sort_by=contract_sum_kzt&sort_dir=desc", headers=h)
+            assert r_sum.json()["items"][0]["company"] == "Alpha BioLab"
+
+            r_sqli = client.get(f"/platform/api/ads/leads?campaign_ids={camp['id']}&sort_by=company;DROP TABLE am_lead;--&sort_dir=asc;DELETE", headers=h)
+            assert r_sqli.status_code == 200
+            assert len(r_sqli.json()["items"]) == 2
+
+            # 3. Edit lead: change company, phone (auto-normalizes & flips whitelisted=True!), director, status, icp_score
+            zeta = next(x for x in r_asc.json()["items"] if x["company"] == "Zeta Clinic")
+            upd = client.put(
+                f"/platform/api/ads/leads/{zeta['id']}",
+                json={
+                    "company": "Zeta Medical Group",
+                    "bin": "333333333333",
+                    "city": "Astana",
+                    "category": "Private Hospital",
+                    "service": "Centrifuges",
+                    "director": "Берик Сериков",
+                    "phone_raw": "8 (705) 694-52-45",
+                    "email": "info@zetamed.kz",
+                    "contract_sum_kzt": 2500000.0,
+                    "icp_score": 98,
+                    "status": "qualified",
+                    "source_url": "https://zetamed.kz",
+                    "enabled": True,
+                },
+                headers=h,
+            )
+            assert upd.status_code == 200
+            u = upd.json()
+            assert u["company"] == "Zeta Medical Group"
+            assert u["city"] == "Astana"
+            assert u["director"] == "Берик Сериков"
+            assert u["phone_e164"] == "+77056945245"
+            assert u["whitelisted"] is True
+            assert u["icp_score"] == 98
+            assert u["status"] == "qualified"
+
+            # 4. Delete lead cleanly
+            dl = client.delete(f"/platform/api/ads/leads/{zeta['id']}", headers=h)
+            assert dl.status_code == 200
+            assert dl.json()["deleted"] is True
+            after = client.get(f"/platform/api/ads/leads?campaign_ids={camp['id']}", headers=h).json()
+            assert after["total"] == 1
+    finally:
+        app.dependency_overrides.clear()
+
 

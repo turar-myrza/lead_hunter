@@ -15,6 +15,9 @@ window.AdsManagerUI = (function () {
     hideUnselected: false,
     search: '',
     statusFilter: 'all',
+    campSort: { by: 'id', dir: 'desc' },
+    audSort: { by: 'id', dir: 'desc' },
+    leadSort: { by: 'icp_score', dir: 'desc' },
     loaded: false,
     ctx: null,
     root: null,
@@ -85,6 +88,10 @@ window.AdsManagerUI = (function () {
     }
     if (S.statusFilter && S.statusFilter !== 'all') p.set('status', S.statusFilter);
     if (S.search.trim()) p.set('q', S.search.trim());
+    if (S.leadSort?.by) {
+      p.set('sort_by', S.leadSort.by);
+      p.set('sort_dir', S.leadSort.dir || 'desc');
+    }
     p.set('limit', '200');
     const qs = p.toString();
     return qs ? '?' + qs : '';
@@ -518,6 +525,166 @@ window.AdsManagerUI = (function () {
   }
 
   /* ===================================================================
+     SORTING HELPERS & LEAD EDITOR DRAWER
+     =================================================================== */
+  function sortArray(arr, sortState) {
+    const { by, dir } = sortState || {};
+    if (!by) return [...arr];
+    const mult = dir === 'asc' ? 1 : -1;
+    return [...arr].sort((a, b) => {
+      const va = a?.[by];
+      const vb = b?.[by];
+      if (va === vb) return 0;
+      if (va === null || va === undefined || va === '') return 1;
+      if (vb === null || vb === undefined || vb === '') return -1;
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mult;
+      if (typeof va === 'boolean' && typeof vb === 'boolean') return (Number(va) - Number(vb)) * mult;
+      return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * mult;
+    });
+  }
+
+  function makeSortableTh(label, key, sortState, onToggle) {
+    const th = el('th');
+    th.style.cursor = 'pointer';
+    th.style.userSelect = 'none';
+    th.style.whiteSpace = 'nowrap';
+    const isActive = sortState.by === key;
+    const arrow = isActive ? (sortState.dir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    th.append(document.createTextNode(label));
+    const sp = el('span', arrow, isActive ? '' : 'am-subtext');
+    sp.style.fontSize = '11px';
+    th.append(sp);
+    th.title = 'Click to sort by ' + label;
+    th.onclick = () => {
+      if (sortState.by === key) {
+        sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortState.by = key;
+        sortState.dir = ['icp_score', 'contract_sum_kzt', 'leads_count', 'called_count', 'offers_count', 'queued_count', 'audiences_count', 'whitelisted', 'id'].includes(key) ? 'desc' : 'asc';
+      }
+      onToggle();
+    };
+    return th;
+  }
+
+  function openLeadDrawer(lead) {
+    if (!lead) return;
+    const form = {
+      company: lead.company || '',
+      bin: lead.bin || '',
+      city: lead.city || '',
+      category: lead.category || '',
+      service: lead.service || '',
+      director: lead.director || '',
+      phone_raw: lead.phone_raw || lead.phone_e164 || '',
+      email: lead.email || '',
+      contract_sum_kzt: lead.contract_sum_kzt ?? '',
+      icp_score: lead.icp_score ?? 0,
+      status: lead.status || 'new',
+      source_url: lead.source_url || '',
+      enabled: Boolean(lead.enabled),
+    };
+
+    const addField = (body, labelText, key, type = 'text', placeholder = '') => {
+      const lbl = el('label', labelText);
+      const inp = el('input');
+      inp.type = type;
+      inp.value = form[key] ?? '';
+      if (placeholder) inp.placeholder = placeholder;
+      inp.oninput = e => { form[key] = e.target.value; };
+      lbl.append(inp);
+      body.append(lbl);
+      return inp;
+    };
+
+    openDrawer('✏️ Edit Lead #' + lead.id, body => {
+      addField(body, 'Company Name', 'company', 'text', 'ТОО ...');
+      addField(body, '12-Digit BIN', 'bin', 'text', '150540010004');
+      addField(body, 'City / Region', 'city', 'text', 'Алматы');
+      addField(body, 'Category / OKED', 'category', 'text', 'Медицинское оборудование');
+      addField(body, 'Service We Sell', 'service', 'text');
+      addField(body, 'Director / Contact Person', 'director', 'text');
+      addField(body, 'Phone Number (auto-normalized to +77...)', 'phone_raw', 'tel', '+77075296883');
+      addField(body, 'Email', 'email', 'email', 'info@company.kz');
+
+      const numRow = el('div', undefined, 'am-row-2');
+      const sumLbl = el('label', 'Contract / Tax Sum (KZT)');
+      const sumInp = el('input');
+      sumInp.type = 'number';
+      sumInp.min = '0';
+      sumInp.value = form.contract_sum_kzt;
+      sumInp.oninput = e => { form.contract_sum_kzt = e.target.value; };
+      sumLbl.append(sumInp);
+
+      const icpLbl = el('label', 'ICP Score (0–100)');
+      const icpInp = el('input');
+      icpInp.type = 'number';
+      icpInp.min = '0';
+      icpInp.max = '100';
+      icpInp.value = form.icp_score;
+      icpInp.oninput = e => { form.icp_score = e.target.value; };
+      icpLbl.append(icpInp);
+      add(numRow, sumLbl, icpLbl);
+      body.append(numRow);
+
+      const stLbl = el('label', 'Lead Status');
+      const stSel = el('select');
+      for (const st of ['new', 'queued', 'called', 'offer_sent', 'qualified', 'callback', 'rejected', 'blocked_whitelist', 'deferred_cap', 'failed']) {
+        const o = el('option', st);
+        o.value = st;
+        stSel.append(o);
+      }
+      stSel.value = form.status;
+      stSel.onchange = e => { form.status = e.target.value; };
+      stLbl.append(stSel);
+      body.append(stLbl);
+
+      addField(body, 'Source URL', 'source_url', 'url', 'https://...');
+
+      const enBox = el('div');
+      enBox.append(el('label', 'Lead Enabled'), makeSwitch(form.enabled, v => { form.enabled = v; }));
+      body.append(enBox);
+    }, foot => {
+      const delBtn = S.ctx.button('🗑 Delete', async () => {
+        if (!window.confirm(`Delete lead "${lead.company}"?`)) return;
+        await S.ctx.api('/ads/leads/' + lead.id, 'DELETE');
+        S.selectedLeads.delete(lead.id);
+        S.ctx.notice('Lead deleted');
+        closeDrawer();
+        await loadAll(true);
+      }, 'secondary-btn');
+
+      const cancelBtn = el('button', 'Cancel', 'secondary-btn');
+      cancelBtn.type = 'button';
+      cancelBtn.onclick = closeDrawer;
+
+      const saveBtn = S.ctx.button('💾 Save Lead', async () => {
+        const payload = {
+          company: form.company.trim(),
+          bin: form.bin.trim(),
+          city: form.city.trim(),
+          category: form.category.trim(),
+          service: form.service.trim(),
+          director: form.director.trim(),
+          phone_raw: form.phone_raw.trim(),
+          email: form.email.trim(),
+          contract_sum_kzt: form.contract_sum_kzt === '' ? null : Number(form.contract_sum_kzt),
+          icp_score: form.icp_score === '' ? 0 : Math.max(0, Math.min(100, parseInt(form.icp_score, 10) || 0)),
+          status: form.status,
+          source_url: form.source_url.trim(),
+          enabled: Boolean(form.enabled),
+        };
+        await S.ctx.api('/ads/leads/' + lead.id, 'PUT', payload);
+        S.ctx.notice('Lead updated: ' + payload.company);
+        closeDrawer();
+        await loadAll(true);
+      }, 'primary-btn');
+
+      add(foot, delBtn, cancelBtn, saveBtn);
+    });
+  }
+
+  /* ===================================================================
      QUEUE DIALOG / DRAWER
      =================================================================== */
   function openQueueDrawer() {
@@ -610,15 +777,31 @@ window.AdsManagerUI = (function () {
     const thChk = el('th');
     thChk.append(masterChk);
     trh.append(thChk);
-    for (const h of ['On/Off', 'Campaign', 'Product / Service', 'Objective', 'Lang', 'Audiences', 'Leads', 'Called', 'Offers', 'Queued', 'Status']) {
-      trh.append(el('th', h));
+    const campCols = [
+      ['On/Off', 'status'],
+      ['Campaign', 'name'],
+      ['Product / Service', 'service'],
+      ['Objective', 'objective'],
+      ['Lang', 'lang'],
+      ['Audiences', 'audiences_count'],
+      ['Leads', 'leads_count'],
+      ['Called', 'called_count'],
+      ['Offers', 'offers_count'],
+      ['Queued', 'queued_count'],
+      ['Status', 'status'],
+    ];
+    for (const [lbl, key] of campCols) {
+      trh.append(makeSortableTh(lbl, key, S.campSort, renderDynamic));
     }
     thead.append(trh);
     table.append(thead);
 
-    const visibleCampaigns = (S.hideUnselected && S.selectedCampaigns.size)
-      ? S.campaigns.filter(c => S.selectedCampaigns.has(c.id))
-      : S.campaigns;
+    const visibleCampaigns = sortArray(
+      (S.hideUnselected && S.selectedCampaigns.size)
+        ? S.campaigns.filter(c => S.selectedCampaigns.has(c.id))
+        : S.campaigns,
+      S.campSort
+    );
 
     const tbody = el('tbody');
     for (const c of visibleCampaigns) {
@@ -687,15 +870,30 @@ window.AdsManagerUI = (function () {
     const thChk = el('th');
     thChk.append(masterChk);
     trh.append(thChk);
-    for (const h of ['On/Off', 'Audience Rule Set', 'Segment', 'Campaign', 'Regions', 'Keywords', 'Sources', 'Auto', 'Last Run / Result', 'Leads']) {
-      trh.append(el('th', h));
+    const audCols = [
+      ['On/Off', 'status'],
+      ['Audience Rule Set', 'name'],
+      ['Segment', 'segment'],
+      ['Campaign', 'campaign_name'],
+      ['Regions', null],
+      ['Keywords', null],
+      ['Sources', null],
+      ['Auto', 'auto_discovery'],
+      ['Last Run / Result', 'last_run'],
+      ['Leads', 'leads_count'],
+    ];
+    for (const [lbl, key] of audCols) {
+      trh.append(key ? makeSortableTh(lbl, key, S.audSort, renderDynamic) : el('th', lbl));
     }
     thead.append(trh);
     table.append(thead);
 
-    const visibleAudiences = (S.hideUnselected && S.selectedAudiences.size)
-      ? S.audiences.filter(a => S.selectedAudiences.has(a.id))
-      : S.audiences;
+    const visibleAudiences = sortArray(
+      (S.hideUnselected && S.selectedAudiences.size)
+        ? S.audiences.filter(a => S.selectedAudiences.has(a.id))
+        : S.audiences,
+      S.audSort
+    );
 
     const tbody = el('tbody');
     for (const a of visibleAudiences) {
@@ -777,14 +975,33 @@ window.AdsManagerUI = (function () {
     const thChk = el('th');
     thChk.append(masterChk);
     trh.append(thChk);
-    for (const h of ['On/Off', 'Company', 'BIN', 'City', 'Category', 'Service We Sell', 'Director', 'Phone / Whitelist', 'Contract Sum', 'ICP Score', 'Source', 'Status', 'Actions']) {
-      trh.append(el('th', h));
+    const leadCols = [
+      ['On/Off', 'enabled'],
+      ['Company', 'company'],
+      ['BIN', 'bin'],
+      ['City', 'city'],
+      ['Category', 'category'],
+      ['Service We Sell', 'service'],
+      ['Director', 'director'],
+      ['Phone / Whitelist', 'phone_e164'],
+      ['Contract Sum', 'contract_sum_kzt'],
+      ['ICP Score', 'icp_score'],
+      ['Source', 'source'],
+      ['Status', 'status'],
+      ['Actions', null],
+    ];
+    for (const [lbl, key] of leadCols) {
+      trh.append(key ? makeSortableTh(lbl, key, S.leadSort, () => loadAll(true)) : el('th', lbl));
     }
     thead.append(trh);
     table.append(thead);
 
+    const visibleLeads = (S.hideUnselected && S.selectedLeads.size)
+      ? items.filter(l => S.selectedLeads.has(l.id))
+      : items;
+
     const tbody = el('tbody');
-    for (const l of items) {
+    for (const l of visibleLeads) {
       const tr = el('tr');
       const tdChk = el('td');
       tdChk.append(makeCheckbox(S.selectedLeads.has(l.id), chk => {
@@ -881,7 +1098,12 @@ window.AdsManagerUI = (function () {
       }, 'secondary-btn am-row-btn');
       enrichBtn.title = 'Enrich BIN & Director via KZ Registries';
 
-      add(actDiv, callBtn, offerBtn, enrichBtn);
+      const editBtn = el('button', '✏️', 'secondary-btn am-row-btn');
+      editBtn.type = 'button';
+      editBtn.title = 'Edit Lead Details';
+      editBtn.onclick = () => openLeadDrawer(l);
+
+      add(actDiv, editBtn, callBtn, offerBtn, enrichBtn);
       tdAct.append(actDiv);
       tr.append(tdAct);
       tbody.append(tr);
@@ -969,6 +1191,23 @@ window.AdsManagerUI = (function () {
     }
 
     if (S.tab === 'leads') {
+      if (S.selectedLeads.size > 0) {
+        leftGrp.append(S.ctx.button(
+          S.hideUnselected ? '👁️ Show All Leads' : `🔍 Hide Unselected (${S.selectedLeads.size})`,
+          () => {
+            S.hideUnselected = !S.hideUnselected;
+            renderDynamic();
+          },
+          S.hideUnselected ? 'primary-btn' : 'secondary-btn'
+        ));
+      }
+      if (S.selectedLeads.size === 1) {
+        const lid = Array.from(S.selectedLeads)[0];
+        const leadObj = (S.leads.items || []).find(l => l.id === lid);
+        if (leadObj) {
+          leftGrp.append(S.ctx.button('✏️ Edit Lead', () => openLeadDrawer(leadObj), 'secondary-btn'));
+        }
+      }
       if (S.selectedLeads.size >= 1) {
         leftGrp.append(S.ctx.button('📞 Call selected', async () => {
           const id = Array.from(S.selectedLeads)[0];
@@ -1069,7 +1308,31 @@ window.AdsManagerUI = (function () {
       S.tab = 'leads';
       loadAll(true);
     };
-    add(searchBar, searchInp, stSel);
+
+    const sortSel = el('select');
+    for (const [val, lbl] of [
+      ['icp_score:desc', 'Sort: ICP Score (High → Low)'],
+      ['whitelisted:desc', 'Sort: PBX Whitelisted First'],
+      ['company:asc', 'Sort: Company (A → Z)'],
+      ['company:desc', 'Sort: Company (Z → A)'],
+      ['city:asc', 'Sort: City (A → Z)'],
+      ['contract_sum_kzt:desc', 'Sort: Contract Sum (High → Low)'],
+      ['status:asc', 'Sort: Status (A → Z)'],
+      ['id:desc', 'Sort: Newest Added'],
+    ]) {
+      const opt = el('option', lbl);
+      opt.value = val;
+      sortSel.append(opt);
+    }
+    sortSel.value = `${S.leadSort.by}:${S.leadSort.dir}`;
+    sortSel.onchange = e => {
+      const [by, dir] = e.target.value.split(':');
+      S.leadSort = { by, dir };
+      S.tab = 'leads';
+      loadAll(true);
+    };
+
+    add(searchBar, searchInp, stSel, sortSel);
     wrap.append(searchBar);
 
     S.dynamicEl = el('div', undefined, 'am-wrap');

@@ -206,6 +206,10 @@ function render() {
     onOpenAdsManager: () => {
       section = 'Ads Manager';
       render();
+    },
+    onOpenKzHarvester: () => {
+      section = 'KZ Data Harvester';
+      render();
     }
   };
 

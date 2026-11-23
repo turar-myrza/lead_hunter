@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.services.catalog import CATALOG_KEYS
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 
 KATO_MAP = {
     "almaty": "750000000",
@@ -159,3 +159,45 @@ class ToggleIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool
+
+
+LeadStatusCode = Literal[
+    "new",
+    "queued",
+    "called",
+    "offer_sent",
+    "qualified",
+    "callback",
+    "rejected",
+    "blocked_whitelist",
+    "deferred_cap",
+    "failed",
+]
+
+
+class LeadUpdateIn(BaseModel):
+    """Lead edit payload for updating company, contact, BIN, phone, ICP, and status."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    company: str = Field(min_length=1, max_length=200)
+    bin: str = Field(default="", max_length=24)
+    city: str = Field(default="", max_length=120)
+    category: str = Field(default="", max_length=200)
+    service: str = Field(default="", max_length=200)
+    director: str = Field(default="", max_length=160)
+    phone_raw: str = Field(default="", max_length=120)
+    email: str = Field(default="", max_length=160)
+    contract_sum_kzt: Optional[float] = Field(default=None, ge=0)
+    icp_score: Optional[int] = Field(default=None, ge=0, le=100)
+    status: Optional[LeadStatusCode] = None
+    source_url: str = Field(default="", max_length=500)
+    enabled: Optional[bool] = None
+
+    @field_validator("company")
+    @classmethod
+    def strip_company(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Company name cannot be empty")
+        return cleaned

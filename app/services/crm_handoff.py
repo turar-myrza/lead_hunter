@@ -13,7 +13,7 @@ from app.core.config import Settings
 from app.services.platform_store import PlatformStore
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 
 HANDOFF_SCHEMA = """
 CREATE TABLE IF NOT EXISTS am_call_outcomes(

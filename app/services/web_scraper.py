@@ -11,7 +11,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 
 _BLOCKED_HOSTNAMES = {
     "localhost",

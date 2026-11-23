@@ -28,6 +28,48 @@ window.PlatformStudioUI = (() => {
   let scriptLang = 'kz';
   let scriptProductKey = '';
   let lastScriptPreview = null;
+  let selectedHarvesterCategories = [];
+  let harvestSort = { by: 'icp_score', dir: 'desc' };
+
+  try {
+    const savedCats = sessionStorage.getItem('lh_harvester_categories');
+    if (savedCats) selectedHarvesterCategories = JSON.parse(savedCats) || [];
+  } catch { /* ignore storage errors */ }
+
+  function saveHarvesterCategories(cats) {
+    selectedHarvesterCategories = Array.isArray(cats) ? cats : [];
+    try {
+      sessionStorage.setItem('lh_harvester_categories', JSON.stringify(selectedHarvesterCategories));
+    } catch { /* ignore storage errors */ }
+  }
+
+  function syncAudienceSelectionsToHarvester() {
+    if (!lastAudienceAnalysis || !Array.isArray(lastAudienceAnalysis.segments)) return;
+    const chosen = lastAudienceAnalysis.segments
+      .filter((_, idx) => selectedProposedIdx.has(idx))
+      .map((seg, i) => ({
+        id: 'ai_' + i + '_' + (seg.name || 'seg'),
+        name: seg.name || 'Target Segment',
+        segment: (seg.segment || 'b2b').toLowerCase(),
+        keywords: Array.isArray(seg.keywords) && seg.keywords.length ? seg.keywords : [seg.name].filter(Boolean),
+        regions: Array.isArray(seg.regions) && seg.regions.length ? seg.regions : ['all'],
+        origin: 'Target Audiences (AI)',
+      }));
+    saveHarvesterCategories(chosen);
+  }
+
+  function syncProductSelectionsToHarvester(selectedArr) {
+    if (!Array.isArray(selectedArr) || !selectedArr.length) return;
+    const cats = selectedArr.map(p => ({
+      id: 'prod_' + p.id,
+      name: p.category || p.name_ru || p.name,
+      segment: 'b2b',
+      keywords: [p.name_ru || p.name, p.category].filter(Boolean),
+      regions: ['all'],
+      origin: 'Products Catalog',
+    }));
+    saveHarvesterCategories(cats);
+  }
 
   function pcm16Base64ToWavUrl(b64, sampleRate = 24000) {
     const bin = atob(b64);
@@ -268,8 +310,15 @@ window.PlatformStudioUI = (() => {
       const selectedArr = studioProducts.filter(p => selectedProductIds.has(p.id));
       if (selectedArr.length) {
         rightTools.append(button(`🎯 Find Target Audiences (${selectedArr.length})`, async () => {
+          syncProductSelectionsToHarvester(selectedArr);
           if (onSelectForAudience) onSelectForAudience(selectedArr[0]);
         }, 'call-btn'));
+        if (h.onOpenKzHarvester) {
+          rightTools.append(button(`🌐 Harvest in KZ (${selectedArr.length})`, async () => {
+            syncProductSelectionsToHarvester(selectedArr);
+            h.onOpenKzHarvester();
+          }, 'secondary-btn'));
+        }
       }
     }
 
@@ -289,6 +338,7 @@ window.PlatformStudioUI = (() => {
             if (chk.checked) selectedProductIds.add(item.id);
             else selectedProductIds.delete(item.id);
             c.classList.toggle('is-checked', chk.checked);
+            syncProductSelectionsToHarvester(studioProducts.filter(p => selectedProductIds.has(p.id)));
             updateActionToolbar();
           };
           const titleWrap = el('div');
@@ -469,6 +519,7 @@ window.PlatformStudioUI = (() => {
       });
       lastAudienceAnalysis = res;
       selectedProposedIdx = new Set((res.segments || []).map((_, idx) => idx));
+      syncAudienceSelectionsToHarvester();
       notice(`Found ${(res.segments || []).length} target client ranges (${res.model_used || 'AI'})`);
       renderResults();
     }, 'primary-btn');
@@ -496,6 +547,7 @@ window.PlatformStudioUI = (() => {
           if (chk.checked) selectedProposedIdx.add(idx);
           else selectedProposedIdx.delete(idx);
           sc.classList.toggle('is-checked', chk.checked);
+          syncAudienceSelectionsToHarvester();
         };
         add(head, chk, el('h4', seg.name || 'Segment'), badge((seg.segment || 'b2b').toUpperCase(), 'cyan-badge'));
         sc.append(head);
@@ -521,6 +573,7 @@ window.PlatformStudioUI = (() => {
       const applyBtn = button('🚀 Create Selected Audiences in Ads Manager', async () => {
         const chosen = lastAudienceAnalysis.segments.filter((_, i) => selectedProposedIdx.has(i));
         if (!chosen.length) throw Error('Select at least one customer range');
+        syncAudienceSelectionsToHarvester();
         let cid = parseInt(campSel.value, 10);
         if (!cid) {
           const newCamp = await api('/ads/campaigns', 'POST', {
@@ -536,7 +589,15 @@ window.PlatformStudioUI = (() => {
         if (onOpenAdsManager) onOpenAdsManager();
       }, 'call-btn');
 
-      add(applyRow, campSel, applyBtn);
+      const sendToHarvesterBtn = button('🌐 Send Selected Categories to KZ Harvester →', async () => {
+        const chosen = lastAudienceAnalysis.segments.filter((_, i) => selectedProposedIdx.has(i));
+        if (!chosen.length) throw Error('Select at least one customer range');
+        syncAudienceSelectionsToHarvester();
+        notice(`Sent ${chosen.length} selected category(ies) to KZ Multi-Source Harvester`);
+        if (h.onOpenKzHarvester) h.onOpenKzHarvester();
+      }, 'primary-btn');
+
+      add(applyRow, campSel, applyBtn, sendToHarvesterBtn);
       resCard.append(applyRow);
       resultsContainer.append(resCard);
     }
@@ -1265,16 +1326,64 @@ window.PlatformStudioUI = (() => {
     );
 
     let meta = { sources: [], keys: {}, total_fts_indexed: 0 };
+    let savedAudiences = [];
     try {
-      const [sRes, cRes] = await Promise.all([
+      const [sRes, cRes, aRes] = await Promise.all([
         api('/studio/discovery/sources'),
         api('/ads/campaigns').catch(() => ({ items: [] })),
+        api('/ads/audiences').catch(() => ({ items: [] })),
       ]);
       meta = sRes || meta;
       campaignsCache = cRes.items || [];
+      savedAudiences = aRes.items || [];
     } catch (e) {
       root.append(el('p', 'Failed to load Kazakhstan discovery sources: ' + e.message, 'muted'));
       return;
+    }
+
+    // Build unified category list from previous menu (Target Audiences AI / Products) + saved Ads Manager Audiences
+    const activeCatMap = new Map();
+    const checkedCatIds = new Set();
+
+    // 1. Categories explicitly selected in previous steps (2. Target Audiences / 1. Products)
+    for (const c of selectedHarvesterCategories || []) {
+      const cid = c.id || ('prev_' + c.name);
+      activeCatMap.set(cid, c);
+      checkedCatIds.add(cid);
+    }
+    // 2. Also pull currently checked products if user navigated straight from Step 1
+    if (!activeCatMap.size && selectedProductIds.size && studioProducts.length) {
+      const prods = studioProducts.filter(p => selectedProductIds.has(p.id));
+      for (const p of prods) {
+        const cid = 'prod_' + p.id;
+        activeCatMap.set(cid, {
+          id: cid,
+          name: p.category || p.name_ru || p.name,
+          segment: 'b2b',
+          keywords: [p.name_ru || p.name, p.category].filter(Boolean),
+          regions: ['all'],
+          origin: 'Products Catalog',
+        });
+        checkedCatIds.add(cid);
+      }
+    }
+    // 3. Saved Ads Manager Audiences as additional selectable categories
+    for (const aud of savedAudiences) {
+      const cid = 'aud_' + aud.id;
+      const kws = Array.isArray(aud.rules?.keywords) && aud.rules.keywords.length ? aud.rules.keywords : [aud.name];
+      const regs = Array.isArray(aud.rules?.regions) && aud.rules.regions.length ? aud.rules.regions : ['all'];
+      activeCatMap.set(cid, {
+        id: cid,
+        name: aud.name,
+        segment: aud.segment || 'b2b',
+        keywords: kws,
+        regions: regs,
+        origin: 'Saved Audience',
+      });
+      // Auto-check first saved audience only if user came in with nothing selected from Step 1/2
+      if (!selectedHarvesterCategories.length && !selectedProductIds.size && checkedCatIds.size === 0) {
+        checkedCatIds.add(cid);
+      }
     }
 
     const wrap = (lbl, node) => { const l = el('label', lbl); l.append(node); return l; };
@@ -1347,8 +1456,7 @@ window.PlatformStudioUI = (() => {
 
     // Search parameters
     const kwInp = el('input');
-    kwInp.placeholder = 'Keywords (comma-separated): e.g. центрифуга, медтехника, шины, клиника';
-    kwInp.value = 'центрифуга, медтехника';
+    kwInp.placeholder = 'Keywords (comma-separated): auto-filled from selected categories above';
 
     const regSel = el('select');
     for (const [val, txt] of [
@@ -1362,6 +1470,68 @@ window.PlatformStudioUI = (() => {
     ]) {
       const o = el('option', txt); o.value = val; regSel.append(o);
     }
+
+    function applyCheckedCategoriesToInputs() {
+      const kws = [];
+      const regs = [];
+      for (const cid of checkedCatIds) {
+        const cat = activeCatMap.get(cid);
+        if (!cat) continue;
+        for (const k of cat.keywords || []) {
+          const clean = String(k || '').trim();
+          if (clean && !kws.includes(clean)) kws.push(clean);
+        }
+        for (const r of cat.regions || []) {
+          const cleanR = String(r || '').trim().toLowerCase();
+          if (cleanR && !regs.includes(cleanR)) regs.push(cleanR);
+        }
+      }
+      if (kws.length) kwInp.value = kws.slice(0, 10).join(', ');
+      if (regs.length === 1 && ['all', 'almaty', 'astana', 'shymkent', 'karaganda', 'aktobe', 'atyrau'].includes(regs[0])) {
+        regSel.value = regs[0];
+      } else if (regs.length > 1) {
+        regSel.value = 'all';
+      }
+    }
+
+    // Selected Categories Panel (from 1. Products / 2. Target Audiences / Saved Audiences)
+    const catPanel = el('div', undefined, 'studio-draft-box');
+    catPanel.style.marginTop = '12px';
+    const catHead = el('div', undefined, 'studio-toolbar');
+    catHead.append(el('h4', `🎯 Categories from Previous Menu (${checkedCatIds.size} selected)`));
+    const catBar = el('div', undefined, 'actions');
+    if (activeCatMap.size === 0) {
+      catPanel.append(catHead, el('p', 'No categories selected yet in "1. Products" or "2. Target Audiences (AI)". Enter keywords below or select categories in the previous step.', 'muted'));
+    } else {
+      for (const [cid, cat] of activeCatMap.entries()) {
+        const pill = el('label', undefined, 'pill-btn' + (checkedCatIds.has(cid) ? ' active' : ''));
+        pill.style.display = 'inline-flex';
+        pill.style.alignItems = 'center';
+        pill.style.gap = '6px';
+        pill.style.cursor = 'pointer';
+        const cChk = el('input');
+        cChk.type = 'checkbox';
+        cChk.checked = checkedCatIds.has(cid);
+        cChk.onchange = () => {
+          if (cChk.checked) checkedCatIds.add(cid);
+          else checkedCatIds.delete(cid);
+          pill.classList.toggle('active', cChk.checked);
+          catHead.firstChild.textContent = `🎯 Categories from Previous Menu (${checkedCatIds.size} selected)`;
+          applyCheckedCategoriesToInputs();
+        };
+        const kwHint = (cat.keywords || []).slice(0, 2).join(', ');
+        pill.append(
+          cChk,
+          el('strong', cat.name),
+          badge((cat.segment || 'b2b').toUpperCase(), 'cyan-badge'),
+          el('small', `${cat.origin}${kwHint ? ' · ' + kwHint : ''}`, 'muted')
+        );
+        catBar.append(pill);
+      }
+      catPanel.append(catHead, catBar);
+      applyCheckedCategoriesToInputs();
+    }
+    harvestCard.append(catPanel);
 
     const campSel = el('select');
     const optNone = el('option', 'Preview & Index to FTS5 only (do not add to campaign)');
@@ -1459,16 +1629,52 @@ window.PlatformStudioUI = (() => {
         return;
       }
 
+      const sortedItems = [...(r.items || [])].sort((a, b) => {
+        const mult = harvestSort.dir === 'asc' ? 1 : -1;
+        const key = harvestSort.by;
+        const va = key === 'sources' ? (a.sources || [a.source]).join(',') : a[key];
+        const vb = key === 'sources' ? (b.sources || [b.source]).join(',') : b[key];
+        if (va === vb) return 0;
+        if (va === null || va === undefined || va === '') return 1;
+        if (vb === null || vb === undefined || vb === '') return -1;
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mult;
+        return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * mult;
+      });
+
       const tbl = el('table');
       const thead = el('thead');
       const hr = el('tr');
-      for (const col of ['Company & Category', 'BIN', 'Director', 'City', 'Phone / WhatsApp', 'Sources', 'ICP', 'Action']) {
-        hr.append(el('th', col));
+      for (const [col, key] of [
+        ['Company & Category', 'company'],
+        ['BIN', 'bin'],
+        ['Director', 'director'],
+        ['City', 'city'],
+        ['Phone / WhatsApp', 'phone_e164'],
+        ['Sources', 'sources'],
+        ['ICP', 'icp_score'],
+        ['Action', null],
+      ]) {
+        const th = el('th');
+        if (key) {
+          th.style.cursor = 'pointer';
+          th.style.userSelect = 'none';
+          const isAct = harvestSort.by === key;
+          const arrow = isAct ? (harvestSort.dir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+          th.append(document.createTextNode(col + arrow));
+          th.onclick = () => {
+            if (harvestSort.by === key) harvestSort.dir = harvestSort.dir === 'asc' ? 'desc' : 'asc';
+            else { harvestSort.by = key; harvestSort.dir = key === 'icp_score' ? 'desc' : 'asc'; }
+            renderHarvestResults();
+          };
+        } else {
+          th.textContent = col;
+        }
+        hr.append(th);
       }
       thead.append(hr);
       tbl.append(thead);
       const tbody = el('tbody');
-      for (const item of r.items) {
+      for (const item of sortedItems) {
         const tr = el('tr');
         const tdComp = el('td');
         tdComp.append(el('strong', item.company));

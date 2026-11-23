@@ -26,7 +26,7 @@ from bs4 import BeautifulSoup
 from app.services.market_search import MarketSearchEngine
 from app.services.web_scraper import SSRFBlockedError, validate_public_url
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 
 # Strict Kazakhstan mobile & landline prefixes to avoid extracting random numeric IDs from HTML
 KZ_MOBILE_PREFIXES = {
