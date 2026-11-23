@@ -19,15 +19,22 @@ from app.core.config import get_settings
 from app.services.ads_store import AdsStore
 from app.services.ai_engine import AIEngine, AIEngineError, build_call_script_preview
 from app.services.crm_handoff import CRMHandoffService, verify_webhook_signature
+from app.services.discovery.kz_multi_source import (
+    KZ_SOURCES_META,
+    KazakhstanMultiSourceHarvester,
+    parse_bulk_registry_file,
+)
 from app.services.market_search import MarketSearchEngine
 from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
 from app.services.web_scraper import SSRFBlockedError
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 ALLOWED_TEMPLATE_EXTS = {".docx", ".pdf", ".html", ".htm", ".txt", ".md"}
 MAX_TEMPLATE_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_BULK_DATA_EXTS = {".csv", ".json"}
+MAX_BULK_DATA_BYTES = 20 * 1024 * 1024  # 20 MB
 
 router = APIRouter(prefix="/platform/api/studio", tags=["Platform Studio"])
 
@@ -49,6 +56,16 @@ def studio_market() -> MarketSearchEngine:
 def studio_handoff() -> CRMHandoffService:
     settings = get_settings()
     return CRMHandoffService(SalesStore(settings.lead_hunter_db), settings)
+
+
+def studio_harvester(
+    store: PlatformStore = Depends(studio_store),
+    market: MarketSearchEngine = Depends(studio_market),
+) -> KazakhstanMultiSourceHarvester:
+    return KazakhstanMultiSourceHarvester(
+        market_engine=market,
+        api_keys=store.get_data_source_keys(masked=False),
+    )
 
 
 # ------------------------------------------------------------------
@@ -449,7 +466,7 @@ def reindex_audience_seeds(market: MarketSearchEngine = Depends(studio_market)):
 def apply_analyzed_audiences(data: ApplyAudiencesIn, store: PlatformStore = Depends(studio_store)):
     ads_store = AdsStore(store.base)
     created = []
-    valid_regions = {"all", "almaty", "astana", "shymkent"}
+    valid_regions = {"all", "almaty", "astana", "shymkent", "karaganda", "aktobe", "atyrau"}
     for seg in data.segments:
         segment_type = str(seg.get("segment") or "b2b").lower()
         if segment_type not in {"b2b", "b2g", "b2c"}:
@@ -460,7 +477,11 @@ def apply_analyzed_audiences(data: ApplyAudiencesIn, store: PlatformStore = Depe
         rules = {
             "regions": regions,
             "keywords": keywords[:10],
-            "sources": ["csv_seed", "goszakup"] if segment_type == "b2g" else (["manual_import"] if segment_type == "b2c" else ["csv_seed"]),
+            "sources": (
+                ["csv_seed", "uchet_pk", "e_ondiris", "goszakup"]
+                if segment_type == "b2g"
+                else (["manual_import"] if segment_type == "b2c" else ["csv_seed", "satu_kz", "uchet_pk"])
+            ),
             "require_phone": True,
             "year": 2026,
         }
@@ -809,5 +830,197 @@ def delete_document_template(template_id: int, store: PlatformStore = Depends(st
                 pass
     store.delete_document_template(template_id)
     return {"deleted": True, "id": template_id}
+
+
+# ------------------------------------------------------------------
+# 9. Simultaneous Kazakhstan Multi-Source Harvester & BIN Enricher
+# ------------------------------------------------------------------
+class DataSourceKeysIn(BaseModel):
+    twogis_api_key: Optional[str] = None
+    egov_api_key: Optional[str] = None
+    statsnet_api_key: Optional[str] = None
+    kompra_api_key: Optional[str] = None
+
+
+class MultiSourceHarvestIn(BaseModel):
+    sources: list[str] = Field(default_factory=lambda: ["satu_kz", "uchet_pk", "csv_seed"], min_length=1, max_length=9)
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+    regions: list[str] = Field(default_factory=lambda: ["all"], min_length=1, max_length=7)
+    require_phone: bool = False
+    auto_enrich_bin: bool = True
+    index_to_fts: bool = True
+    limit: int = Field(default=30, ge=1, le=100)
+    save_to_campaign_id: int = Field(default=0, ge=0)
+    save_to_audience_id: int = Field(default=0, ge=0)
+
+
+class EnrichBinIn(BaseModel):
+    bin: str = Field(default="", max_length=24)
+    company: str = Field(default="", max_length=200)
+    lead_id: int = Field(default=0, ge=0)
+
+
+@router.get("/discovery/sources", dependencies=[Depends(auth)])
+def list_kz_discovery_sources(
+    store: PlatformStore = Depends(studio_store),
+    market: MarketSearchEngine = Depends(studio_market),
+):
+    keys_masked = store.get_data_source_keys(masked=True)
+    raw_keys = store.get_data_source_keys(masked=False)
+    items = []
+    for meta in KZ_SOURCES_META:
+        key_field = meta.get("key_field") or ""
+        configured = True if not meta["requires_key"] else bool(raw_keys.get(key_field))
+        items.append({
+            **meta,
+            "configured": configured,
+            "status_label": "Ready (No Key Needed)" if not meta["requires_key"] else ("API Key Active" if configured else "Optional API Key"),
+        })
+    return {
+        "sources": items,
+        "keys": keys_masked,
+        "total_fts_indexed": market.count_indexed(),
+    }
+
+
+@router.put("/discovery/keys", dependencies=[Depends(auth)])
+def update_kz_discovery_keys(
+    data: DataSourceKeysIn,
+    store: PlatformStore = Depends(studio_store),
+):
+    return store.save_data_source_keys(data.model_dump(exclude_none=True))
+
+
+@router.post("/discovery/harvest", dependencies=[Depends(auth)])
+async def run_simultaneous_kz_harvest(
+    data: MultiSourceHarvestIn,
+    store: PlatformStore = Depends(studio_store),
+    harvester: KazakhstanMultiSourceHarvester = Depends(studio_harvester),
+):
+    """Run all selected Kazakhstan data sources concurrently, deduplicate, enrich BIN/Director, and optionally save to Campaign."""
+    result = await harvester.discover_simultaneous(
+        sources=data.sources,
+        keywords=data.keywords,
+        regions=data.regions,
+        require_phone=data.require_phone,
+        auto_enrich_bin=data.auto_enrich_bin,
+        index_to_fts=data.index_to_fts,
+        limit=data.limit,
+    )
+
+    saved_to_ads = None
+    if data.save_to_campaign_id > 0 and result.get("items"):
+        astore = AdsStore(store.base)
+        camp = astore.get_campaign(data.save_to_campaign_id)
+        if not camp:
+            raise HTTPException(404, "campaign_not_found")
+        aud_id = data.save_to_audience_id
+        if aud_id <= 0:
+            existing_auds = astore.list_audiences([camp["id"]])
+            if existing_auds:
+                aud_id = existing_auds[0]["id"]
+            else:
+                new_aud = astore.create_audience(
+                    campaign_id=camp["id"],
+                    name="KZ Multi-Source Harvest",
+                    segment="b2b",
+                    rules={
+                        "regions": [r for r in data.regions if r in {"almaty", "astana", "shymkent", "karaganda", "aktobe", "atyrau", "all"}] or ["all"],
+                        "keywords": data.keywords[:10],
+                        "sources": [s for s in data.sources if s in {"csv_seed", "goszakup", "manual_import", "satu_kz", "uchet_pk", "twogis", "egov_open_data", "statsnet", "e_ondiris"}] or ["satu_kz", "uchet_pk"],
+                        "require_phone": data.require_phone,
+                    },
+                    auto_discovery=False,
+                )
+                aud_id = new_aud["id"]
+
+        lead_rows = [
+            {
+                "campaign_id": camp["id"],
+                "audience_id": aud_id,
+                "company": r.get("company") or "",
+                "bin": r.get("bin") or "",
+                "city": r.get("city") or "",
+                "category": r.get("category") or "",
+                "service": camp.get("service") or camp.get("product_key") or "",
+                "director": r.get("director") or "",
+                "phone_raw": r.get("phone_raw") or "",
+                "phone_e164": r.get("phone_e164") or "",
+                "email": r.get("email") or "",
+                "contract_sum_kzt": r.get("contract_sum_kzt"),
+                "source": r.get("source") or "kz_multi",
+                "source_url": r.get("source_url") or "",
+                "icp_score": int(r.get("icp_score") or 50),
+                "whitelisted": False,
+            }
+            for r in result["items"]
+        ]
+        counts = astore.upsert_leads(lead_rows)
+        saved_to_ads = {"campaign_id": camp["id"], "audience_id": aud_id, **counts}
+
+    result["saved_to_ads"] = saved_to_ads
+    return result
+
+
+@router.post("/discovery/enrich-bin", dependencies=[Depends(auth)])
+async def enrich_company_bin(
+    data: EnrichBinIn,
+    store: PlatformStore = Depends(studio_store),
+    harvester: KazakhstanMultiSourceHarvester = Depends(studio_harvester),
+):
+    """Instant concurrent BIN & legal enrichment via PK.Uchet.kz, data.egov.kz, Statsnet, and FTS5."""
+    try:
+        dossier = await harvester.enrich_by_bin(bin_code=data.bin, company_name=data.company)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+    updated_lead = None
+    if data.lead_id > 0 and dossier.get("found"):
+        astore = AdsStore(store.base)
+        updated_lead = astore.update_lead_enrichment(
+            data.lead_id,
+            bin_val=dossier.get("bin") or "",
+            director=dossier.get("director") or "",
+            city=dossier.get("city") or "",
+            phone_raw=dossier.get("phone_raw") or "",
+            phone_e164=dossier.get("phone_e164") or "",
+            email=dossier.get("email") or "",
+            source_append="uchet_pk",
+            icp_bonus=15 if dossier.get("bin") else 5,
+        )
+    dossier["updated_lead"] = updated_lead
+    return dossier
+
+
+@router.post("/discovery/import-bulk", dependencies=[Depends(auth)])
+async def import_bulk_kz_registry(
+    source_tag: str = Form(default="egov_bulk"),
+    file: UploadFile = File(...),
+    market: MarketSearchEngine = Depends(studio_market),
+):
+    """Upload a bulk Open Data CSV or JSON registry (data.egov.kz / e-Ondiris KTP / custom) directly into SQLite FTS5."""
+    orig_name = Path(file.filename or "dataset.csv").name
+    ext = Path(orig_name).suffix.lower()
+    if ext not in ALLOWED_BULK_DATA_EXTS:
+        raise HTTPException(400, f"unsupported_bulk_extension:{ext}")
+    raw_bytes = await file.read()
+    if len(raw_bytes) > MAX_BULK_DATA_BYTES:
+        raise HTTPException(413, "bulk_file_too_large")
+
+    clean_tag = re.sub(r"[^a-zA-Z0-9_\-]", "_", (source_tag or "egov_bulk").strip())[:40] or "egov_bulk"
+    try:
+        records = parse_bulk_registry_file(raw_bytes, orig_name, source_tag=clean_tag)
+    except Exception as exc:
+        raise HTTPException(400, f"invalid_registry_file:{exc}") from None
+
+    inserted = market.upsert_seeds(records)
+    return {
+        "filename": orig_name,
+        "source_tag": clean_tag,
+        "parsed_rows": len(records),
+        "newly_indexed": inserted,
+        "total_fts_indexed": market.count_indexed(),
+    }
+
 
 

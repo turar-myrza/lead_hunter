@@ -9,7 +9,7 @@ from typing import Any, Optional
 from app.services.catalog import CATALOG
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 STUDIO_SCHEMA = """
 CREATE TABLE IF NOT EXISTS am_ai_providers(
@@ -118,6 +118,13 @@ DEFAULT_CRM_CONNECTORS = {
     "moysklad_token": "",
     "onec_odata_url": "",
     "cms_feed_url": "",
+}
+
+DEFAULT_DATA_SOURCE_KEYS = {
+    "twogis_api_key": "",
+    "egov_api_key": "",
+    "statsnet_api_key": "",
+    "kompra_api_key": "",
 }
 
 AVAILABLE_VOICES = [
@@ -459,6 +466,31 @@ class PlatformStore:
                     current[k] = val
         self._set_json_setting("crm_connectors", current)
         return self.get_crm_connectors(masked=True)
+
+    def get_data_source_keys(self, masked: bool = True) -> dict:
+        cfg = self._get_json_setting("kz_data_source_keys", DEFAULT_DATA_SOURCE_KEYS)
+        if not masked:
+            return cfg
+        return {
+            "twogis_api_key": _mask_key(cfg.get("twogis_api_key", "")),
+            "twogis_configured": bool(cfg.get("twogis_api_key")),
+            "egov_api_key": _mask_key(cfg.get("egov_api_key", "")),
+            "egov_configured": bool(cfg.get("egov_api_key")),
+            "statsnet_api_key": _mask_key(cfg.get("statsnet_api_key", "")),
+            "statsnet_configured": bool(cfg.get("statsnet_api_key")),
+            "kompra_api_key": _mask_key(cfg.get("kompra_api_key", "")),
+            "kompra_configured": bool(cfg.get("kompra_api_key")),
+        }
+
+    def save_data_source_keys(self, data: dict) -> dict:
+        current = self.get_data_source_keys(masked=False)
+        for k in DEFAULT_DATA_SOURCE_KEYS:
+            if k in data and data[k] is not None:
+                val = str(data[k]).strip()
+                if "••••" not in val:
+                    current[k] = val
+        self._set_json_setting("kz_data_source_keys", current)
+        return self.get_data_source_keys(masked=True)
 
     # ------------------------------------------------------------------
     # AI Model & Token Connectors

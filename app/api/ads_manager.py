@@ -18,7 +18,7 @@ from app.services.platform_store import PlatformStore
 from app.services.sales_store import SalesStore, now
 from version import VERSION as APP_VERSION
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 router = APIRouter(prefix="/platform/api/ads", tags=["Ads manager"])
 
@@ -73,14 +73,23 @@ def get_meta(mgr: AdsManager = Depends(ads_service)):
             {"id": "almaty", "label": "Almaty", "kato": KATO_MAP["almaty"]},
             {"id": "astana", "label": "Astana", "kato": KATO_MAP["astana"]},
             {"id": "shymkent", "label": "Shymkent", "kato": KATO_MAP["shymkent"]},
+            {"id": "karaganda", "label": "Karaganda", "kato": KATO_MAP["karaganda"]},
+            {"id": "aktobe", "label": "Aktobe", "kato": KATO_MAP["aktobe"]},
+            {"id": "atyrau", "label": "Atyrau", "kato": KATO_MAP["atyrau"]},
         ],
         "segments": [
             {"id": "b2b", "label": "B2B Commercial", "desc": "Private clinics, distributors, companies"},
-            {"id": "b2g", "label": "B2G Tenders", "desc": "Goszakup procurement lots & public orgs"},
+            {"id": "b2g", "label": "B2G Tenders", "desc": "Goszakup & Samruk procurement lots & public orgs"},
             {"id": "b2c", "label": "B2C Inbound / Manual", "desc": "Permissioned or manually imported CSV lists"},
         ],
         "sources": [
-            {"id": "csv_seed", "label": "Verified CSV Seeds (2026)"},
+            {"id": "csv_seed", "label": "Verified CSV Seeds & FTS5 Index"},
+            {"id": "satu_kz", "label": "Satu.kz B2B Marketplace (Direct Phones · Free)"},
+            {"id": "uchet_pk", "label": "PK.Uchet.kz Legal Registry (BIN & Director · Free)"},
+            {"id": "twogis", "label": "2GIS Kazakhstan Directory (Phones & WhatsApp)"},
+            {"id": "egov_open_data", "label": "data.egov.kz Open Registry (ГБД ЮЛ)"},
+            {"id": "statsnet", "label": "Statsnet Corporate Intel (Taxes & Risk)"},
+            {"id": "e_ondiris", "label": "e-Ondiris / Samruk-Kazyna (Domestic Producers)"},
             {"id": "goszakup", "label": "Goszakup Live Registry"},
             {"id": "manual_import", "label": "Manual CSV Import"},
         ],

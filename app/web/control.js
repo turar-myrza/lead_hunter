@@ -1,8 +1,8 @@
 'use strict';
 
 /* =========================================================================
-   Lead Hunter Autonomous B2B Operations Cockpit (v2.1.0)
-   Clean, unified shell — all legacy views removed.
+   Lead Hunter Autonomous B2B Operations Cockpit (v2.9.0)
+   Clean, unified shell — with Simultaneous Kazakhstan Multi-Source Harvester.
    ========================================================================= */
 
 const $ = id => document.getElementById(id);
@@ -21,7 +21,8 @@ const navGroups = [
     items: [
       { id: '1. Products (Prompt AI)', icon: '📦', label: '1. Products (Prompt AI)' },
       { id: '2. Target Audiences (AI)', icon: '🎯', label: '2. Target Audiences (AI)' },
-      { id: 'Ads Manager', icon: '🚀', label: '3. Campaigns & Leads' },
+      { id: 'KZ Data Harvester', icon: '🌐', label: '3. KZ Multi-Source Harvester' },
+      { id: 'Ads Manager', icon: '🚀', label: '4. Campaigns & Leads' },
     ]
   },
   {
@@ -167,8 +168,9 @@ function renderStepper(root) {
   const steps = [
     { id: '1. Products (Prompt AI)', num: '1', label: 'Products (Prompt AI / CRM)' },
     { id: '2. Target Audiences (AI)', num: '2', label: 'Target Audiences (AI)' },
-    { id: 'Ads Manager', num: '3', label: 'Leads & Dial Queue' },
-    { id: 'Telephony & Script Studio', num: '4', label: 'Voice & Call Script' },
+    { id: 'KZ Data Harvester', num: '3', label: 'KZ Multi-Source Harvester' },
+    { id: 'Ads Manager', num: '4', label: 'Leads & Dial Queue' },
+    { id: 'Telephony & Script Studio', num: '5', label: 'Voice & Call Script' },
   ];
   for (const st of steps) {
     const btn = el('button', undefined, 'stepper-pill' + (section === st.id ? ' active' : ''));
@@ -214,6 +216,11 @@ function render() {
 
   if (section === '2. Target Audiences (AI)' && window.PlatformStudioUI) {
     window.PlatformStudioUI.renderAudienceAnalyzer(root, studioHelpers, pendingAudienceProduct);
+    return;
+  }
+
+  if (section === 'KZ Data Harvester' && window.PlatformStudioUI) {
+    window.PlatformStudioUI.renderKzHarvester(root, studioHelpers);
     return;
   }
 

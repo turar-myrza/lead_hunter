@@ -6,7 +6,7 @@ from typing import Any, Iterable, Optional
 from app.services.catalog import catalog_service_label
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 ADS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cc_audit(
@@ -510,6 +510,57 @@ class AdsStore:
                 "UPDATE am_lead SET status=?, last_result=?, updated=? WHERE id=?",
                 (status, last_result, now().isoformat(), lead_id),
             )
+
+    def update_lead_enrichment(
+        self,
+        lead_id: int,
+        *,
+        bin_val: str = "",
+        director: str = "",
+        city: str = "",
+        phone_raw: str = "",
+        phone_e164: str = "",
+        email: str = "",
+        source_append: str = "",
+        icp_bonus: int = 0,
+    ) -> Optional[dict]:
+        """Apply legal/contact enrichment fields to an existing lead without overwriting populated values."""
+        lead = self.get_lead(lead_id)
+        if not lead:
+            return None
+        new_bin = lead.get("bin") or bin_val
+        new_dir = lead.get("director") or director
+        new_city = lead.get("city") or city
+        new_phone_raw = lead.get("phone_raw") or phone_raw
+        new_phone_e164 = lead.get("phone_e164") or phone_e164
+        new_email = lead.get("email") or email
+        new_src = lead.get("source") or ""
+        if source_append and source_append not in new_src:
+            new_src = f"{new_src}+{source_append}" if new_src else source_append
+        new_score = min(100, max(int(lead.get("icp_score") or 0), int(lead.get("icp_score") or 0) + icp_bonus))
+        with self.base.connect() as db:
+            db.execute(
+                """
+                UPDATE am_lead
+                SET bin=?, director=?, city=?, phone_raw=?, phone_e164=?, email=?,
+                    source=?, icp_score=?, updated=?
+                WHERE id=?
+                """,
+                (
+                    new_bin,
+                    new_dir,
+                    new_city,
+                    new_phone_raw,
+                    new_phone_e164,
+                    new_email,
+                    new_src[:120],
+                    new_score,
+                    now().isoformat(),
+                    lead_id,
+                ),
+            )
+        self.audit("am_lead_enriched", f"{lead_id}:bin={new_bin}")
+        return self.get_lead(lead_id)
 
     # ------------------------------------------------------------------
     # Dial Queue

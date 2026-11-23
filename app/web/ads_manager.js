@@ -451,8 +451,8 @@ window.AdsManagerUI = (function () {
           const stText = srcStatus[src.id];
           if (stText) {
             lbl.append(el('span', stText, stText === 'ok' ? 'wl-ok' : 'err-badge'));
-          } else if (src.id === 'csv_seed') {
-            lbl.append(el('span', 'ready', 'wl-ok'));
+          } else if (['csv_seed', 'satu_kz', 'uchet_pk', 'e_ondiris'].includes(src.id)) {
+            lbl.append(el('span', 'ready (free)', 'wl-ok'));
           }
           row.append(lbl);
           body.append(row);
@@ -865,7 +865,23 @@ window.AdsManagerUI = (function () {
       }, 'whatsapp-btn am-row-btn');
       offerBtn.title = 'Send WhatsApp Offer';
 
-      add(actDiv, callBtn, offerBtn);
+      const enrichBtn = S.ctx.button('⚡', async () => {
+        S.ctx.notice('Enriching BIN & Director for ' + (l.company || l.bin) + '...');
+        const res = await S.ctx.api('/studio/discovery/enrich-bin', 'POST', {
+          bin: l.bin || '',
+          company: l.company || '',
+          lead_id: l.id,
+        });
+        if (res.found) {
+          S.ctx.notice(`Enriched: BIN ${res.bin || '—'} · Director: ${res.director || '—'} (${(res.sources_consulted || []).join('+')})`);
+        } else {
+          S.ctx.notice('No matching KZ registry record found for ' + (l.company || l.bin));
+        }
+        await loadAll(true);
+      }, 'secondary-btn am-row-btn');
+      enrichBtn.title = 'Enrich BIN & Director via KZ Registries';
+
+      add(actDiv, callBtn, offerBtn, enrichBtn);
       tdAct.append(actDiv);
       tr.append(tdAct);
       tbody.append(tr);

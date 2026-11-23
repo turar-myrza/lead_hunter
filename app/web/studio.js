@@ -1,7 +1,9 @@
 'use strict';
 
 /* =========================================================================
-   Lead Hunter Platform Studio UI (v2.8.0)
+   Lead Hunter Platform Studio UI (v2.9.0)
+   - Simultaneous Kazakhstan Multi-Source Harvester (Satu.kz, PK.Uchet.kz,
+     2GIS, data.egov.kz, Statsnet, e-Ondiris/Samruk, Bulk FTS5 Importer)
    - Dedicated AI Connectors vs. CRM & ERP Sync Tabs
    - Multi-Company Legal Entity Manager (Advertise from Selected Entity)
    - Document Templates Library & Uploader (Offer, Inquiry, Contract, etc.)
@@ -551,7 +553,15 @@ window.PlatformStudioUI = (() => {
     qInput.type = 'text';
     qInput.placeholder = 'Search companies, BIN, medical, lab, equipment...';
     const regSel = el('select');
-    for (const [val, txt] of [['', 'All Regions'], ['almaty', 'Almaty'], ['astana', 'Astana'], ['shymkent', 'Shymkent']]) {
+    for (const [val, txt] of [
+      ['', 'All Regions'],
+      ['almaty', 'Almaty'],
+      ['astana', 'Astana'],
+      ['shymkent', 'Shymkent'],
+      ['karaganda', 'Karaganda'],
+      ['aktobe', 'Aktobe'],
+      ['atyrau', 'Atyrau'],
+    ]) {
       const o = el('option', txt); o.value = val; regSel.append(o);
     }
     const ftsResults = el('div');
@@ -1238,9 +1248,409 @@ window.PlatformStudioUI = (() => {
     root.append(scCard);
   }
 
+  /* =========================================================================
+     6. SIMULTANEOUS KAZAKHSTAN MULTI-SOURCE DATA HARVESTER & BIN ENRICHER
+     ========================================================================= */
+  let lastHarvestResult = null;
+  let lastBinDossier = null;
+
+  async function renderKzHarvester(root, h) {
+    const { api, el, add, button, badge, notice, paragraph, onOpenAdsManager } = h;
+    root.replaceChildren();
+
+    paragraph(
+      root,
+      'Gather verified Kazakhstan company contacts, 12-digit BINs, directors, and tax solvency data simultaneously across Satu.kz, PK.Uchet.kz, 2GIS, data.egov.kz, Statsnet, e-Ondiris/Samruk, and SQLite FTS5.',
+      'lead'
+    );
+
+    let meta = { sources: [], keys: {}, total_fts_indexed: 0 };
+    try {
+      const [sRes, cRes] = await Promise.all([
+        api('/studio/discovery/sources'),
+        api('/ads/campaigns').catch(() => ({ items: [] })),
+      ]);
+      meta = sRes || meta;
+      campaignsCache = cRes.items || [];
+    } catch (e) {
+      root.append(el('p', 'Failed to load Kazakhstan discovery sources: ' + e.message, 'muted'));
+      return;
+    }
+
+    const wrap = (lbl, node) => { const l = el('label', lbl); l.append(node); return l; };
+    const selectedSources = new Set(
+      (meta.sources || [])
+        .filter(s => s.configured && s.id !== 'goszakup' && s.id !== 'e_ondiris')
+        .map(s => s.id)
+    );
+    if (!selectedSources.size) {
+      selectedSources.add('satu_kz');
+      selectedSources.add('uchet_pk');
+    }
+
+    // Card 1: Simultaneous Multi-Source Harvester
+    const harvestCard = el('div', undefined, 'card studio-highlight');
+    const hHead = el('div', undefined, 'studio-toolbar');
+    const hTitle = el('div');
+    hTitle.append(el('h3', '🌐 Simultaneous Kazakhstan Multi-Source Harvester'));
+    hTitle.append(badge(`${(meta.total_fts_indexed || 0).toLocaleString()} FTS5 Seeds Indexed`, 'live-badge'));
+    hHead.append(hTitle);
+    harvestCard.append(hHead);
+
+    // Source checkboxes grid
+    const srcGrid = el('div', undefined, 'studio-form-grid');
+    const chkMap = new Map();
+    for (const s of meta.sources || []) {
+      const box = el('label', undefined, 'card');
+      box.style.padding = '10px 12px';
+      box.style.margin = '0';
+      box.style.cursor = 'pointer';
+      const topRow = el('div', undefined, 'actions');
+      const chk = el('input');
+      chk.type = 'checkbox';
+      chk.checked = selectedSources.has(s.id);
+      chk.onchange = () => {
+        if (chk.checked) selectedSources.add(s.id);
+        else selectedSources.delete(s.id);
+      };
+      chkMap.set(s.id, chk);
+      topRow.append(chk, el('strong', s.label));
+      topRow.append(badge(s.status_label, s.configured ? 'live-badge' : ''));
+      box.append(topRow, el('div', s.description, 'muted'));
+      srcGrid.append(box);
+    }
+    harvestCard.append(srcGrid);
+
+    // Quick select buttons
+    const qSelBar = el('div', undefined, 'actions');
+    qSelBar.style.marginTop = '10px';
+    add(
+      qSelBar,
+      button('✓ Select All Ready Sources', async () => {
+        for (const s of meta.sources || []) {
+          const ok = Boolean(s.configured);
+          const c = chkMap.get(s.id);
+          if (c) c.checked = ok;
+          if (ok) selectedSources.add(s.id);
+          else selectedSources.delete(s.id);
+        }
+      }, 'secondary-btn'),
+      button('Select All Sources (Including Keyed)', async () => {
+        for (const s of meta.sources || []) {
+          const c = chkMap.get(s.id);
+          if (c) c.checked = true;
+          selectedSources.add(s.id);
+        }
+      }, 'secondary-btn')
+    );
+    harvestCard.append(qSelBar);
+
+    // Search parameters
+    const kwInp = el('input');
+    kwInp.placeholder = 'Keywords (comma-separated): e.g. центрифуга, медтехника, шины, клиника';
+    kwInp.value = 'центрифуга, медтехника';
+
+    const regSel = el('select');
+    for (const [val, txt] of [
+      ['all', 'All Kazakhstan'],
+      ['almaty', 'Almaty (Алматы)'],
+      ['astana', 'Astana (Астана)'],
+      ['shymkent', 'Shymkent (Шымкент)'],
+      ['karaganda', 'Karaganda (Караганда)'],
+      ['aktobe', 'Aktobe (Актобе)'],
+      ['atyrau', 'Atyrau (Атырау)'],
+    ]) {
+      const o = el('option', txt); o.value = val; regSel.append(o);
+    }
+
+    const campSel = el('select');
+    const optNone = el('option', 'Preview & Index to FTS5 only (do not add to campaign)');
+    optNone.value = '0';
+    campSel.append(optNone);
+    for (const c of campaignsCache) {
+      const o = el('option', `Auto-Save into Campaign #${c.id}: ${c.name} (${(c.lang || 'kz').toUpperCase()})`);
+      o.value = String(c.id);
+      campSel.append(o);
+    }
+
+    const limInp = el('input');
+    limInp.type = 'number';
+    limInp.min = '5';
+    limInp.max = '100';
+    limInp.value = '25';
+
+    const pGrid = el('div', undefined, 'studio-form-grid');
+    pGrid.style.marginTop = '12px';
+    add(
+      pGrid,
+      wrap('Target Industry / Product Keywords', kwInp),
+      wrap('Region / City', regSel),
+      wrap('Auto-Save to Ads Campaign (Optional)', campSel),
+      wrap('Max Merged Companies (5–100)', limInp)
+    );
+    harvestCard.append(pGrid);
+
+    const optRow = el('div', undefined, 'actions');
+    const wfChk = el('input'); wfChk.type = 'checkbox'; wfChk.checked = true;
+    const wfLbl = el('label', ' Auto-Enrich BIN & Official Director (Waterfall via PK.Uchet.kz)');
+    wfLbl.prepend(wfChk);
+
+    const reqPhChk = el('input'); reqPhChk.type = 'checkbox'; reqPhChk.checked = false;
+    const reqPhLbl = el('label', ' Only keep leads with verified KZ Phone (+7 7...)');
+    reqPhLbl.prepend(reqPhChk);
+    add(optRow, wfLbl, reqPhLbl);
+    harvestCard.append(optRow);
+
+    const resultsArea = el('div');
+    const dossierArea = el('div');
+
+    const runBtn = button('🚀 Run Simultaneous Multi-Source Harvest', async () => {
+      const srcs = Array.from(selectedSources);
+      if (!srcs.length) throw Error('Select at least one Kazakhstan data source');
+      const kws = kwInp.value.split(',').map(x => x.trim()).filter(Boolean);
+      if (!kws.length) throw Error('Enter at least one keyword');
+      notice(`Running ${srcs.length} Kazakhstan sources simultaneously...`);
+      const res = await api('/studio/discovery/harvest', 'POST', {
+        sources: srcs,
+        keywords: kws,
+        regions: [regSel.value],
+        require_phone: reqPhChk.checked,
+        auto_enrich_bin: wfChk.checked,
+        index_to_fts: true,
+        limit: parseInt(limInp.value, 10) || 25,
+        save_to_campaign_id: parseInt(campSel.value, 10) || 0,
+      });
+      lastHarvestResult = res;
+      let msg = `Harvest complete in ${res.elapsed_ms}ms: ${res.total_merged} unique KZ companies (${res.enriched_count} BINs enriched, +${res.indexed_to_fts} indexed to FTS5)`;
+      if (res.saved_to_ads) {
+        msg += ` · Saved ${res.saved_to_ads.inserted} new / ${res.saved_to_ads.updated} updated into Campaign #${res.saved_to_ads.campaign_id}`;
+      }
+      notice(msg);
+      renderHarvestResults();
+    }, 'call-btn');
+    const runRow = el('div', undefined, 'actions');
+    runRow.style.marginTop = '12px';
+    runRow.append(runBtn);
+    if (campaignsCache.length && onOpenAdsManager) {
+      runRow.append(button('🚀 Open Campaigns & Leads', async () => onOpenAdsManager(), 'secondary-btn'));
+    }
+    harvestCard.append(runRow, resultsArea);
+
+    function renderHarvestResults() {
+      resultsArea.replaceChildren();
+      if (!lastHarvestResult) return;
+      const r = lastHarvestResult;
+
+      // Per-source telemetry pills
+      const repBar = el('div', undefined, 'actions');
+      repBar.style.margin = '14px 0 8px 0';
+      repBar.append(badge(`⚡ Total: ${r.total_merged} merged (${r.elapsed_ms}ms)`, 'live-badge'));
+      repBar.append(badge(`🏛️ BINs Enriched: ${r.enriched_count}`, 'cyan-badge'));
+      repBar.append(badge(`💾 FTS5 Indexed: +${r.indexed_to_fts}`, ''));
+      for (const [srcId, info] of Object.entries(r.source_report || {})) {
+        const ok = info.status === 'ok';
+        const txt = ok ? `🟢 ${srcId}: ${info.found} (${info.ms}ms)` : `⚠️ ${srcId}: ${info.status}`;
+        repBar.append(badge(txt, ok ? 'live-badge' : ''));
+      }
+      resultsArea.append(repBar);
+
+      if (!(r.items || []).length) {
+        paragraph(resultsArea, 'No companies matched the current criteria across selected sources.', 'muted');
+        return;
+      }
+
+      const tbl = el('table');
+      const thead = el('thead');
+      const hr = el('tr');
+      for (const col of ['Company & Category', 'BIN', 'Director', 'City', 'Phone / WhatsApp', 'Sources', 'ICP', 'Action']) {
+        hr.append(el('th', col));
+      }
+      thead.append(hr);
+      tbl.append(thead);
+      const tbody = el('tbody');
+      for (const item of r.items) {
+        const tr = el('tr');
+        const tdComp = el('td');
+        tdComp.append(el('strong', item.company));
+        if (item.category) tdComp.append(el('div', item.category, 'muted'));
+
+        const tdPhone = el('td');
+        if (item.phone_e164) {
+          tdPhone.append(el('div', item.phone_e164));
+          if (item.whatsapp_active) tdPhone.append(badge('WhatsApp', 'live-badge'));
+        } else {
+          tdPhone.append(el('span', '—', 'muted'));
+        }
+        if (item.email) tdPhone.append(el('div', item.email, 'muted'));
+
+        const tdSrc = el('td');
+        for (const s of item.sources || [item.source]) {
+          tdSrc.append(badge(s, 'cyan-badge'));
+        }
+
+        const tdAct = el('td');
+        tdAct.append(button('⚡ Dossier', async () => {
+          notice(`Fetching full KZ dossier for ${item.bin || item.company}...`);
+          const dos = await api('/studio/discovery/enrich-bin', 'POST', {
+            bin: item.bin || '',
+            company: item.company || '',
+          });
+          lastBinDossier = dos;
+          renderBinDossier();
+          notice(`Dossier loaded (${(dos.sources_consulted || []).join(' + ') || 'none'})`);
+        }, 'secondary-btn'));
+
+        add(
+          tr,
+          tdComp,
+          el('td', item.bin || '—'),
+          el('td', item.director || '—'),
+          el('td', item.city || '—'),
+          tdPhone,
+          tdSrc,
+          el('td', `${item.icp_score || 0}/100`),
+          tdAct
+        );
+        tbody.append(tr);
+      }
+      tbl.append(tbody);
+      resultsArea.append(tbl);
+    }
+    renderHarvestResults();
+    root.append(harvestCard);
+
+    // Card 2: Instant BIN & Legal Entity Dossier Lookup
+    const binCard = el('div', undefined, 'card');
+    binCard.append(el('h3', '🏛️ Instant Kazakhstan BIN & Company Dossier Lookup'));
+    paragraph(binCard, 'Enter any 12-digit Kazakhstan BIN (e.g. 230540010755 or 150540010004) or company name to pull official Director FIO, legal address, KATO, active status, and Statsnet solvency dossier.', 'muted');
+    const binRow = el('div', undefined, 'studio-inline-row');
+    const binInp = el('input');
+    binInp.placeholder = '12-digit BIN (e.g. 230540010755) or company name (e.g. LabStarMed)';
+    const binBtn = button('⚡ Enrich BIN / Lookup', async () => {
+      const val = binInp.value.trim();
+      if (val.length < 2) throw Error('Enter a 12-digit BIN or company name');
+      const isBin = /^\d{12}$/.test(val.replace(/\D/g, '')) && val.replace(/\D/g, '').length === 12;
+      notice(`Querying KZ registries for ${val}...`);
+      const res = await api('/studio/discovery/enrich-bin', 'POST', isBin ? { bin: val.replace(/\D/g, '') } : { company: val });
+      lastBinDossier = res;
+      renderBinDossier();
+      notice(res.found ? `Found: ${res.company} (BIN ${res.bin || '—'})` : 'No matching KZ company found');
+    }, 'primary-btn');
+    add(binRow, binInp, binBtn);
+    binCard.append(binRow, dossierArea);
+
+    function renderBinDossier() {
+      dossierArea.replaceChildren();
+      if (!lastBinDossier) return;
+      const d = lastBinDossier;
+      const box = el('div', undefined, 'studio-draft-box');
+      if (!d.found) {
+        box.append(el('p', 'No matching record found in configured Kazakhstan registries.', 'muted'));
+        dossierArea.append(box);
+        return;
+      }
+      const head = el('div', undefined, 'actions');
+      head.append(el('h4', d.company || d.bin));
+      head.append(badge(d.legal_status === 'active' ? '🟢 ACTIVE' : (d.legal_status || 'unknown').toUpperCase(), d.legal_status === 'active' ? 'live-badge' : ''));
+      for (const s of d.sources_consulted || []) head.append(badge(s, 'cyan-badge'));
+      box.append(head);
+
+      const details = [
+        ['12-Digit BIN', d.bin || '—'],
+        ['Official Director (FIO)', d.director || '—'],
+        ['City / KATO', `${d.city || '—'}${d.kato_code ? ' (KATO ' + d.kato_code + ')' : ''}`],
+        ['Legal Address', d.address || '—'],
+        ['OKED Activity', d.oked || '—'],
+        ['Phone / Email', `${d.phone_e164 || '—'} · ${d.email || '—'}`],
+      ];
+      if (d.tax_paid_kzt) details.push(['Taxes / Revenue (KZT)', `${Number(d.tax_paid_kzt).toLocaleString()} ₸`]);
+      if (d.risk_level && d.risk_level !== 'unknown') details.push(['Risk Profile', d.risk_level.toUpperCase()]);
+
+      const dGrid = el('div', undefined, 'studio-form-grid');
+      for (const [k, v] of details) {
+        const item = el('div');
+        item.append(el('small', k, 'muted'), el('div', v));
+        dGrid.append(item);
+      }
+      box.append(dGrid);
+      if (d.markdown_dossier) {
+        box.append(el('h4', 'Statsnet Intelligence Dossier'), el('pre', d.markdown_dossier));
+      }
+      dossierArea.append(box);
+    }
+    renderBinDossier();
+    root.append(binCard);
+
+    // Card 3: Bulk Open Data Registry Uploader (data.egov.kz / e-Ondiris CSV or JSON)
+    const bulkCard = el('div', undefined, 'card');
+    bulkCard.append(el('h3', '📥 Bulk Open Data Registry Importer (data.egov.kz / e-Ondiris KTP -> SQLite FTS5)'));
+    paragraph(bulkCard, 'Upload CSV or JSON datasets downloaded from data.egov.kz (ГБД ЮЛ), e-ondiris.gov.kz, Samruk-Kazyna, or 2GIS exports (up to 20 MB) for sub-50ms offline search across 100,000+ companies.', 'muted');
+    const bTag = el('input');
+    bTag.value = 'egov_bulk';
+    bTag.placeholder = 'Source tag: e.g. egov_bulk, e_ondiris_ktp, twogis_export';
+    const bFile = el('input');
+    bFile.type = 'file';
+    bFile.accept = '.csv,.json';
+    const bRow = el('div', undefined, 'studio-form-grid');
+    add(bRow, wrap('Dataset Source Tag', bTag), wrap('CSV or JSON File (max 20 MB)', bFile));
+    bulkCard.append(bRow);
+    bulkCard.append(button('📤 Upload & Index into FTS5', async () => {
+      if (!bFile.files || !bFile.files[0]) throw Error('Choose a .csv or .json registry file first');
+      const fd = new FormData();
+      fd.append('source_tag', bTag.value.trim() || 'egov_bulk');
+      fd.append('file', bFile.files[0]);
+      notice(`Indexing ${bFile.files[0].name} into SQLite FTS5...`);
+      const resp = await fetch('/platform/api/studio/discovery/import-bulk', {
+        method: 'POST',
+        headers: { 'X-Control-Request': '1' },
+        credentials: 'same-origin',
+        body: fd,
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+        throw Error(err.detail || 'Bulk import failed');
+      }
+      const res = await resp.json();
+      notice(`Indexed ${res.newly_indexed} new companies (parsed ${res.parsed_rows}) · Total FTS5 Seeds: ${res.total_fts_indexed}`);
+      renderKzHarvester(root, h);
+    }, 'primary-btn'));
+    root.append(bulkCard);
+
+    // Card 4: Optional Kazakhstan Data Source API Keys
+    const keysCard = el('div', undefined, 'card');
+    keysCard.append(el('h3', '🔑 Optional Kazakhstan Data Source API Keys'));
+    paragraph(keysCard, 'Satu.kz and PK.Uchet.kz work immediately with zero API key. Add optional keys below to activate 2GIS Places API, data.egov.kz API v4, and Statsnet Corporate Intelligence simultaneously.', 'muted');
+    const k = meta.keys || {};
+    const k2gis = el('input'); k2gis.value = k.twogis_api_key || ''; k2gis.placeholder = '2GIS Catalog API v3 Key';
+    const kegov = el('input'); kegov.value = k.egov_api_key || ''; kegov.placeholder = 'Free apiKey from data.egov.kz Programmer Cabinet';
+    const kstat = el('input'); kstat.value = k.statsnet_api_key || ''; kstat.placeholder = 'Statsnet API Key (sk_live_...)';
+    const kkomp = el('input'); kkomp.value = k.kompra_api_key || ''; kkomp.placeholder = 'Optional Kompra.kz API Token';
+    const kGrid = el('div', undefined, 'studio-form-grid');
+    add(
+      kGrid,
+      wrap('2GIS Places API Key', k2gis),
+      wrap('data.egov.kz Open Data apiKey (Free)', kegov),
+      wrap('Statsnet REST API Key', kstat),
+      wrap('Kompra.kz Token (Optional)', kkomp)
+    );
+    keysCard.append(kGrid);
+    keysCard.append(button('💾 Save Data Source Keys', async () => {
+      await api('/studio/discovery/keys', 'PUT', {
+        twogis_api_key: k2gis.value.trim(),
+        egov_api_key: kegov.value.trim(),
+        statsnet_api_key: kstat.value.trim(),
+        kompra_api_key: kkomp.value.trim(),
+      });
+      notice('Kazakhstan data source API keys saved!');
+      renderKzHarvester(root, h);
+    }, 'primary-btn'));
+    root.append(keysCard);
+  }
+
   return {
     renderProductCatalog,
     renderAudienceAnalyzer,
+    renderKzHarvester,
     renderAIConnectors,
     renderCrmSync,
     renderCompanyEntities,

@@ -21,7 +21,21 @@ from app.services.catalog import catalog_service_label, resolve_catalog_item
 from app.services.control_store import ControlStore
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
+
+KZ_LIVE_SOURCES = {"satu_kz", "uchet_pk", "twogis", "egov_open_data", "statsnet", "e_ondiris"}
+
+
+def _run_coro_sync(coro):
+    """Execute an async coroutine safely from synchronous code, even if a loop is active in caller thread."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 ALMATY_TZ = ZoneInfo("Asia/Almaty")
 MOBILE_PREFIX_RE = re.compile(r"^\+7(?:70\d|747|75\d|76\d|77[15678]|78\d)")
@@ -368,6 +382,7 @@ class AdsManager:
         call_fn: Optional[Callable[..., dict]] = None,
         offer_fn: Optional[Callable[..., dict]] = None,
         whitelist_fn: Optional[Callable[[], set[str]]] = None,
+        harvester_transport: Any = None,
     ):
         self.store = store
         self.settings = settings
@@ -376,6 +391,7 @@ class AdsManager:
         self._call_fn = call_fn
         self._offer_fn = offer_fn or dispatch_offer
         self._whitelist_fn = whitelist_fn
+        self._harvester_transport = harvester_transport
 
     def _call_pbx(self, **kwargs) -> dict:
         if self._call_fn is not None:
@@ -449,24 +465,80 @@ class AdsManager:
         whitelist = self.fetch_whitelist()
         collected: list[dict] = []
         errors: dict[str, str] = {}
+        source_status_updates: dict[str, str] = {}
+
+        # Run all selected Kazakhstan live multi-source adapters SIMULTANEOUSLY via asyncio.gather
+        live_sources = [s for s in rules.sources if s in KZ_LIVE_SOURCES]
+        if live_sources:
+            try:
+                from app.services.discovery.kz_multi_source import KazakhstanMultiSourceHarvester
+                from app.services.market_search import MarketSearchEngine
+                from app.services.platform_store import PlatformStore
+
+                pstore = PlatformStore(self.store.base)
+                mengine = MarketSearchEngine(self.store.base)
+                harvester = KazakhstanMultiSourceHarvester(
+                    market_engine=mengine,
+                    api_keys=pstore.get_data_source_keys(masked=False),
+                    transport=self._harvester_transport,
+                )
+                h_res = _run_coro_sync(
+                    harvester.discover_simultaneous(
+                        sources=live_sources,
+                        keywords=rules.keywords or [service_label or camp["product_key"]],
+                        regions=rules.regions,
+                        require_phone=rules.require_phone,
+                        auto_enrich_bin=True,
+                        index_to_fts=True,
+                        limit=100,
+                    )
+                )
+                for rec in h_res.get("items") or []:
+                    if not _matches_sum(rec.get("contract_sum_kzt"), rules):
+                        continue
+                    collected.append(rec)
+                for src_id, rep in (h_res.get("source_report") or {}).items():
+                    st = rep.get("status", "ok")
+                    if st == "ok":
+                        source_status_updates[src_id] = "ok"
+                    else:
+                        errors[src_id] = st
+                        source_status_updates[src_id] = st
+            except Exception as exc:
+                for src_id in live_sources:
+                    errors[src_id] = f"error:{exc.__class__.__name__}"
+                    source_status_updates[src_id] = errors[src_id]
 
         for src in rules.sources:
+            if src in KZ_LIVE_SOURCES:
+                continue
             try:
                 if src == "csv_seed":
                     collected.extend(_load_csv_seed(rules, self.settings.ads_seed_dir))
+                    source_status_updates["csv_seed"] = "ok"
                 elif src == "manual_import":
                     collected.extend(_parse_manual_import(rules))
+                    source_status_updates["manual_import"] = "ok"
                 elif src == "goszakup":
                     collected.extend(self._goszakup_fn(rules))
+                    source_status_updates["goszakup"] = "ok"
             except SourceUnavailable as exc:
                 errors[src] = f"source_unavailable:{exc}"
+                source_status_updates[src] = errors[src]
             except Exception as exc:
                 errors[src] = f"error:{exc.__class__.__name__}"
+                source_status_updates[src] = errors[src]
 
-        if errors:
-            self.store.set_setting("am_source_status", json.dumps(errors, ensure_ascii=False))
-        elif "goszakup" in rules.sources:
-            self.store.set_setting("am_source_status", json.dumps({"goszakup": "ok"}))
+        if source_status_updates:
+            prev_raw = self.store.get_setting("am_source_status")
+            prev_map: dict[str, str] = {}
+            if prev_raw:
+                try:
+                    prev_map = json.loads(prev_raw)
+                except json.JSONDecodeError:
+                    prev_map = {}
+            prev_map.update(source_status_updates)
+            self.store.set_setting("am_source_status", json.dumps(prev_map, ensure_ascii=False))
 
         rows_to_upsert: list[dict] = []
         for raw in collected[:200]:

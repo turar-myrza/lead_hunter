@@ -117,5 +117,12 @@
     "result_summary": "1) Split INTEGRATIONS & ORG navigation into 4 dedicated tabs: AI Connectors, CRM & ERP Sync, Company Entities, Document Templates; 2) Built am_company_entities table & CRUD/activate APIs allowing multiple legal entities and per-product company_id selection; 3) Built am_document_templates table & secure multipart upload/download/activate APIs (.docx, .pdf, .html, .txt, .md) with extension allowlist, 10MB cap, and path-traversal protection; 4) Installed python-multipart on whatflow, bumped VERSION to 2.8.0, passed all 37 pytest tests, and deployed live.",
     "parent": "node-2.7.0-step-6-bitrix24-crm-handoff-and-analytics",
     "timestamp": "2026-11-23T15:20:00+05:00"
+  },
+  {
+    "id": "node-2.9.0-kazakhstan-simultaneous-multi-source-harvester",
+    "prompt_summary": "Implement v2.9.0 simultaneous Kazakhstan multi-source company discovery & enrichment engine beyond Goszakup (Satu.kz, PK.Uchet.kz, 2GIS, data.egov.kz, Statsnet, e-Ondiris/Samruk, Bulk FTS5 Importer)",
+    "result_summary": "1) Created app/services/discovery/kz_multi_source.py (v2.9.0) implementing 6 concurrent Kazakhstan data source adapters (SatuKzAdapter, UchetPkAdapter, TwoGisAdapter, EgovOpenDataAdapter, StatsnetAdapter, EOndirisSamrukAdapter) orchestrated via asyncio.gather with cross-source entity deduplication (BIN, E.164 phone, normalized legal name), strict KZ phone prefix validation blocking HTML noise, automatic zero-key waterfall BIN/Director enrichment via PK.Uchet.kz with strict token-matching, and automatic SQLite FTS5 indexing; 2) Expanded AdsManager models/regions (Almaty, Astana, Shymkent, Karaganda, Aktobe, Atyrau) and wired simultaneous multi-source harvesting into AdsManager.run_discovery while preserving B2C manual_import-only policy; 3) Added /platform/api/studio/discovery/{sources,keys,harvest,enrich-bin,import-bulk} endpoints with masked API key storage and secure .csv/.json bulk FTS5 uploader; 4) Built KZ Multi-Source Harvester Hub, Instant BIN Dossier lookup, Bulk Open Data Importer, and per-lead ⚡ Enrich button in Web Cockpit UI (studio.js, control.js, ads_manager.js, control.html); 5) Bumped VERSION to 2.9.0 across all 13 core modules, verified live KZ harvest (Satu.kz + PK.Uchet.kz returning real BINs, directors & WhatsApp phones in 3.5s) and full pytest suite on whatflow.",
+    "parent": "node-2.8.0-separated-tabs-multi-company-and-templates",
+    "timestamp": "2026-11-23T18:00:00+05:00"
   }
 ]

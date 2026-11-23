@@ -5,22 +5,38 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.services.catalog import CATALOG_KEYS
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 KATO_MAP = {
     "almaty": "750000000",
     "astana": "710000000",
     "shymkent": "790000000",
+    "karaganda": "350000000",
+    "aktobe": "150000000",
+    "atyrau": "230000000",
 }
 
 CITY_ALIASES = {
     "almaty": ("almaty", "алматы"),
     "astana": ("astana", "астана", "нур-султан", "нұр-сұлтан"),
     "shymkent": ("shymkent", "шымкент"),
+    "karaganda": ("karaganda", "караганда", "қарағанды"),
+    "aktobe": ("aktobe", "актобе", "ақтөбе"),
+    "atyrau": ("atyrau", "атырау"),
 }
 
-RegionCode = Literal["almaty", "astana", "shymkent", "all"]
-SourceCode = Literal["csv_seed", "goszakup", "manual_import"]
+RegionCode = Literal["almaty", "astana", "shymkent", "karaganda", "aktobe", "atyrau", "all"]
+SourceCode = Literal[
+    "csv_seed",
+    "goszakup",
+    "manual_import",
+    "satu_kz",
+    "uchet_pk",
+    "twogis",
+    "egov_open_data",
+    "statsnet",
+    "e_ondiris",
+]
 SegmentCode = Literal["b2b", "b2g", "b2c"]
 ObjectiveCode = Literal["call_then_offer", "offer_then_call", "call_only"]
 LangCode = Literal["kz", "ru"]
@@ -31,12 +47,12 @@ class AudienceRules(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    regions: list[RegionCode] = Field(default_factory=lambda: ["all"], min_length=1, max_length=4)
+    regions: list[RegionCode] = Field(default_factory=lambda: ["all"], min_length=1, max_length=7)
     keywords: list[str] = Field(default_factory=list, max_length=10)
     min_contract_kzt: Optional[float] = Field(default=None, ge=0)
     max_contract_kzt: Optional[float] = Field(default=None, ge=0)
     year: int = Field(default=2026, ge=2020, le=2030)
-    sources: list[SourceCode] = Field(default_factory=lambda: ["csv_seed"], min_length=1, max_length=3)
+    sources: list[SourceCode] = Field(default_factory=lambda: ["csv_seed"], min_length=1, max_length=9)
     require_phone: bool = True
     manual_rows: Optional[str] = Field(default=None, max_length=204800)
 

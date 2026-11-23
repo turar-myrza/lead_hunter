@@ -10,7 +10,7 @@ from typing import Any, Iterable, Optional
 
 from app.services.sales_store import SalesStore, now
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 MARKET_FTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS am_market_seeds(
@@ -56,14 +56,23 @@ END;
 """
 
 
+VALID_REGIONS = {"almaty", "astana", "shymkent", "karaganda", "aktobe", "atyrau"}
+
+
 def _normalize_region(city_or_region: str) -> str:
     txt = (city_or_region or "").lower()
     if any(k in txt for k in ("almaty", "алмат")):
         return "almaty"
-    if any(k in txt for k in ("astana", "астан", "nur-sultan", "нур-султан")):
+    if any(k in txt for k in ("astana", "астан", "nur-sultan", "нур-султан", "нұр-сұлтан")):
         return "astana"
     if any(k in txt for k in ("shymkent", "шымкент", "чимкент")):
         return "shymkent"
+    if any(k in txt for k in ("karaganda", "караганд", "қарағанд")):
+        return "karaganda"
+    if any(k in txt for k in ("aktobe", "актоб", "ақтөб")):
+        return "aktobe"
+    if any(k in txt for k in ("atyrau", "атырау")):
+        return "atyrau"
     return "all"
 
 
@@ -96,7 +105,7 @@ class MarketSearchEngine:
                 continue
             city = str(r.get("city") or "").strip()
             region = str(r.get("region") or "").strip().lower()
-            if not region or region not in {"almaty", "astana", "shymkent", "all"}:
+            if not region or region not in (VALID_REGIONS | {"all"}):
                 region = _normalize_region(city)
             try:
                 budget = float(r.get("contract_sum_kzt") or 0.0)
@@ -128,6 +137,70 @@ class MarketSearchEngine:
                 rows,
             )
         return len(rows)
+
+    def upsert_seeds(self, records: Iterable[dict[str, Any]]) -> int:
+        """Insert or update market seeds while preventing duplicate entries by BIN or (company, source)."""
+        ts = now().isoformat()
+        incoming = list(records)
+        if not incoming:
+            return 0
+        added = 0
+        with self.base.connect() as db:
+            for r in incoming:
+                company = str(r.get("company") or "").strip()[:250]
+                if not company:
+                    continue
+                bin_val = str(r.get("bin") or "").strip()[:24]
+                city = str(r.get("city") or "").strip()[:120]
+                region = str(r.get("region") or "").strip().lower()
+                if not region or region not in (VALID_REGIONS | {"all"}):
+                    region = _normalize_region(city)
+                category = str(r.get("category") or "").strip()[:160]
+                activity = str(r.get("activity") or "").strip()[:400]
+                phone = str(r.get("phone") or "").strip()[:60]
+                email = str(r.get("email") or "").strip()[:120]
+                source = str(r.get("source") or "seed").strip()[:60]
+                try:
+                    budget = float(r.get("contract_sum_kzt") or 0.0)
+                except (ValueError, TypeError):
+                    budget = 0.0
+
+                existing = None
+                if bin_val:
+                    existing = db.execute("SELECT id, phone, email, activity FROM am_market_seeds WHERE bin=? LIMIT 1", (bin_val,)).fetchone()
+                if not existing:
+                    existing = db.execute(
+                        "SELECT id, phone, email, activity FROM am_market_seeds WHERE lower(company)=lower(?) AND source=? LIMIT 1",
+                        (company, source),
+                    ).fetchone()
+
+                if existing:
+                    db.execute(
+                        """
+                        UPDATE am_market_seeds
+                        SET bin = CASE WHEN bin='' THEN ? ELSE bin END,
+                            city = CASE WHEN city='' THEN ? ELSE city END,
+                            region = CASE WHEN region='all' THEN ? ELSE region END,
+                            phone = CASE WHEN phone='' THEN ? ELSE phone END,
+                            email = CASE WHEN email='' THEN ? ELSE email END,
+                            activity = CASE WHEN activity='' THEN ? ELSE activity END,
+                            contract_sum_kzt = MAX(contract_sum_kzt, ?)
+                        WHERE id=?
+                        """,
+                        (bin_val, city, region, phone, email, activity, budget, existing["id"]),
+                    )
+                else:
+                    db.execute(
+                        """
+                        INSERT INTO am_market_seeds(
+                            bin, company, city, region, category, activity,
+                            phone, email, contract_sum_kzt, source, created
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                        """,
+                        (bin_val, company, city, region, category, activity, phone, email, budget, source, ts),
+                    )
+                    added += 1
+        return added
 
     def index_csv_seeds(self, data_dir: Path) -> int:
         """Load CSV seed files from data_dir into am_market_seeds if not already indexed."""
@@ -213,7 +286,7 @@ class MarketSearchEngine:
             )
             order_by = "ORDER BY s.contract_sum_kzt DESC, s.id DESC"
 
-        if norm_region in {"almaty", "astana", "shymkent"}:
+        if norm_region in VALID_REGIONS:
             where_clauses.append("s.region = ?")
             params.append(norm_region)
 
@@ -247,7 +320,7 @@ class MarketSearchEngine:
         fts_or = " OR ".join(f"({t})" for t in safe_terms[:5])
         params: list[Any] = [fts_or]
         region_sql = ""
-        clean_regions = [r for r in (regions or []) if r in {"almaty", "astana", "shymkent"}]
+        clean_regions = [r for r in (regions or []) if r in VALID_REGIONS]
         if clean_regions:
             placeholders = ",".join("?" for _ in clean_regions)
             region_sql = f" AND s.region IN ({placeholders})"
