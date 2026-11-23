@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     telephony_caller_script: str = Field(default="/home/debian/bitrix_pbx/outbound_caller.py")
     meta_access_token: Optional[SecretStr] = None
     meta_phone_id: str = Field(default="1344487605411939")
+    ads_seed_dir: Path = Path("data")
+    ads_daily_call_cap: int = Field(default=200, ge=1, le=5000)
 
     @field_validator("bitrix24_webhook_url", mode="before")
     @classmethod

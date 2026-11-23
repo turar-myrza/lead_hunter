@@ -61,5 +61,12 @@
     "result_summary": "1) Rebuilt web control center at https://leadhunter.crmconsulting.kz/platform/ with dark Apple Liquid Glass aesthetics, responsive panels, live telemetry pills, and zero interference with panel.whatsappcalls.kz; 2) Configured production Gemini key with gemini-flash-latest and raised daily cap to 1000 calls; 3) Upgraded calling/pbx_caller.py to support remote SSH execution to Asterisk PBX (185.22.64.70) under service user lead-hunter; 4) Implemented POST /platform/api/outreach/call and POST /platform/api/outreach/offer with Meta approved commercial_offer_pdf_doc template (kk/ru); 5) Added live product catalog (Centrifuges, Tires, Scalpel blades) with downloadable 2-page PDFs; 6) Bumped version to 1.6.0 and verified live call and WhatsApp dispatch to +77056945245.",
     "parent": "node-1.5.6-kazakh-language-integration",
     "timestamp": "2026-11-20T18:04:00+05:00"
+  },
+  {
+    "id": "node-1.7.0-ads-manager-interface",
+    "prompt_summary": "Build Meta Ads Manager 3-tier interface (Campaigns -> B2B/B2G/B2C Audiences with visual filter drawer -> Leads with category and service sold), supporting continuous + manual discovery and single + queued dialing with pauses",
+    "result_summary": "1) Added SQLite persistence (am_campaign, am_audience, am_lead, am_dial_queue) in app/services/ads_store.py and rules/models in app/models/ads_manager.py enforcing B2C manual_import-only policy; 2) Built discovery adapters (UTF-8 CSV seeds, manual CSV import, graceful goszakup 302 login_required handling), Kazakhstan phone normalization/ranking, ICP scoring (0-100), read-only PBX whitelist cache (69 numbers), shared WhatsApp offer helper, and Asia/Almaty 09:00-19:00 Mon-Fri dialer worker in app/services/ads_manager.py and app/control_worker.py; 3) Exposed /platform/api/ads/* REST + CSV export routes in app/api/ads_manager.py; 4) Built Meta-Ads-Manager-style 3-tab table UI with cascade filters, toggles, queue controls, and slide-in Visual Filter Drawer in app/web/ads_manager.js and control.{html,css,js}; 5) Bumped VERSION to 1.7.0, passed all 15 pytest tests, deployed to whatflow, and verified live discovery (134 Almaty B2B leads), goszakup login_required reporting, and queued PBX call execution to +77056945245.",
+    "parent": "node-1.6.0-rebuilt-leadhunter-cockpit-and-outreach-architecture",
+    "timestamp": "2026-11-23T10:47:00+05:00"
   }
 ]

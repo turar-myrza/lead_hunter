@@ -8,6 +8,8 @@ from app.core.config import get_settings
 from app.services.sales_store import SalesStore
 from app.services.control_store import ControlStore
 from app.services.control_center import ControlCenter
+from app.services.catalog import CATALOG, resolve_catalog_item
+from app.services.ads_manager import dispatch_offer
 from app.models.control_center import ProductProfile,CampaignInput,SegmentApproval,Review
 from app.services.lead_hunter_open_channels import client_from_settings,inventory
 from app.integrations.bitrix24_open_channels import OpenChannelsError
@@ -16,42 +18,6 @@ router=APIRouter(prefix='/platform',tags=['Control center'])
 WEB=Path(__file__).resolve().parents[1]/'web'
 HEADERS={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
     'Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}
-
-CATALOG=[
-    {
-        "id":"centrifuges",
-        "name":"Зертханалық центрифугалар",
-        "name_ru":"Лабораторные центрифуги",
-        "category":"Медициналық және зертханалық жабдықтар",
-        "price_range":"185 000 – 1 850 000 ₸",
-        "models":["DLAB DM0412","Biosan LMC-3000","Armed 80-2S","Eppendorf 5424 R"],
-        "specs":"15 000 айн/мин дейін, 1.5-50 мл пробиркалар, жасушалық және қан сарысуы талдауы, ресми кепілдік 12-24 ай.",
-        "pdf_kz":"https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges_kz.pdf",
-        "pdf_ru":"https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges.pdf",
-    },
-    {
-        "id":"tires",
-        "name":"Автокөлік шиналары (Жеңіл және жүк көліктері)",
-        "name_ru":"Автомобильные шины (Легковые и грузовые)",
-        "category":"Автокөлік тауарлары және парктік жабдықтау",
-        "price_range":"24 500 – 85 000 ₸",
-        "models":["Viatti Strada Asimmetrico","Cordiant Comfort 2","Triangle AdvanteX","Cordiant Gravity"],
-        "specs":"R14-R18 жазғы/қысқы шиналар, күшейтілген бүйірлік қабырғалар, дистрибьютордың тікелей қоймасынан көтерме баға.",
-        "pdf_kz":"https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges_kz.pdf",
-        "pdf_ru":"https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges.pdf",
-    },
-    {
-        "id":"scalpels",
-        "name":"Хирургиялық скальпельдер мен бір реттік лезвиялар",
-        "name_ru":"Хирургические скальпели и одноразовые лезвия",
-        "category":"Медициналық шығын материалдары",
-        "price_range":"45 – 180 ₸ / дана",
-        "models":["Лезвия №10, №11, №15, №20, №24","Скальпель брюшистый/остроконечный"],
-        "specs":"Көміртекті және тот баспайтын хирургиялық болат, жеке стерильді фольга қаптама, ҚР тіркеу куәлігі бар.",
-        "pdf_kz":"https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges_kz.pdf",
-        "pdf_ru":"https://chat.whatsappcalls.kz/brand-assets/offers/KP_Centrifuges.pdf",
-    }
-]
 
 class CallRequest(BaseModel):
     phone:str=Field(min_length=7,max_length=32)
@@ -97,7 +63,7 @@ def page():return FileResponse(WEB/'control.html',headers=HEADERS)
 
 @router.get('/assets/{name}')
 def asset(name:str):
-    if name not in {'control.js','control.css'}:raise HTTPException(404)
+    if name not in {'control.js','control.css','ads_manager.js'}:raise HTTPException(404)
     return FileResponse(WEB/name,headers=HEADERS)
 
 @router.post('/api/login',dependencies=[Depends(csrf)])
@@ -170,52 +136,16 @@ def start_outreach_call(data:CallRequest,svc=Depends(service)):
 
 @router.post('/api/outreach/offer',dependencies=[Depends(auth)])
 def send_outreach_offer(data:OfferRequest,svc=Depends(service)):
-    from integrations.whatsapp_sender import send_whatsapp_template
     phone=data.phone.strip()
     product_id=data.product.strip()
     lang=data.lang.strip().lower()
-    meta_lang="kk" if lang=="kz" else "ru"
-
-    matched=next((c for c in CATALOG if c["id"]==product_id or c["name"]==product_id or c["name_ru"]==product_id), CATALOG[0])
-    doc_url=data.pdf_url.strip() or (matched["pdf_kz"] if meta_lang=="kk" else matched["pdf_ru"])
-    doc_title=(matched["name"] if meta_lang=="kk" else matched["name_ru"])+".pdf"
-
-    prod_name=matched["name"] if meta_lang=="kk" else matched["name_ru"]
-    components=[
-        {
-            "type":"header",
-            "parameters":[
-                {
-                    "type":"document",
-                    "document":{
-                        "link":doc_url,
-                        "filename":doc_title
-                    }
-                }
-            ]
-        },
-        {
-            "type":"body",
-            "parameters":[
-                {"type":"text","text":prod_name}
-            ]
-        }
-    ]
-
+    matched=dict(resolve_catalog_item(product_id))
+    if data.pdf_url.strip():
+        key="pdf_kz" if lang=="kz" else "pdf_ru"
+        matched[key]=data.pdf_url.strip()
     try:
-        res=send_whatsapp_template(
-            to_phone=phone,
-            template_name="commercial_offer_pdf_doc",
-            language_code=meta_lang,
-            components=components,
-            phone_number_id=svc.settings.meta_phone_id,
-            access_token=svc.settings.meta_access_token.get_secret_value() if svc.settings.meta_access_token else None
-        )
-        wamid=res.get("messages",[{}])[0].get("id","sent")
-        svc.store.log_outreach_offer(phone,prod_name,lang,"commercial_offer_pdf_doc",doc_url,"sent",wamid)
-        return {"status":"sent","wamid":wamid,"phone":phone,"pdf_url":doc_url}
+        return dispatch_offer(phone,matched,lang,svc.settings,svc.store)
     except Exception as exc:
-        svc.store.log_outreach_offer(phone,prod_name,lang,"commercial_offer_pdf_doc",doc_url,"failed","",str(exc))
         raise HTTPException(502,f"WhatsApp dispatch failed: {str(exc)}") from exc
 
 @router.post('/api/products',dependencies=[Depends(auth)])

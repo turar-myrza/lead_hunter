@@ -2,7 +2,7 @@
 
 const $ = id => document.getElementById(id);
 let state = null;
-let section = 'Live Outreach & Voice SDR';
+let section = 'Ads Manager';
 let selected = null;
 let saveEditor = null;
 let activePhone = '+77056945245';
@@ -11,6 +11,7 @@ let activeLang = 'kz';
 let activeDetails = '';
 
 const sections = [
+  'Ads Manager',
   'Live Outreach & Voice SDR',
   'Product Catalog & Offers',
   'AI Product Intelligence',
@@ -168,6 +169,11 @@ function render() {
   $('title').textContent = section;
   const root = $('content');
   root.replaceChildren();
+
+  if (section === 'Ads Manager' && window.AdsManagerUI) {
+    window.AdsManagerUI.render(root, { api, el, add, button, badge, notice, paragraph });
+    return;
+  }
 
   /* ------------------------------------------------------------------
      1. LIVE OUTREACH & VOICE SDR
@@ -634,9 +640,16 @@ $('editor-form').onsubmit = async e => {
 
 refresh().catch(() => {});
 setInterval(() => {
-  if (state && !$('editor').open) {
-    refresh(false).catch(() => {
-      $('connection').textContent = 'Connection Unavailable';
-    });
+  if (state && !$('editor').open && !window.adsDrawerOpen) {
+    if (section === 'Ads Manager' && window.AdsManagerUI) {
+      window.AdsManagerUI.poll();
+      refresh(false).catch(() => {
+        $('connection').textContent = 'Connection Unavailable';
+      });
+    } else {
+      refresh(false).catch(() => {
+        $('connection').textContent = 'Connection Unavailable';
+      });
+    }
   }
 }, 8000);
