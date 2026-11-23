@@ -1,10 +1,11 @@
 'use strict';
 
 /* =========================================================================
-   Lead Hunter Platform Studio UI (v2.0.0)
-   - Prompt-to-Product Catalog (Grid/List View, Checkboxes, Edit, CRM Sync)
-   - Prompt-to-Audience AI Client Analyzer
-   - AI Model & Token Connectors (Gemini, OpenAI, DeepSeek, Anthropic, Local Ollama/vLLM)
+   Lead Hunter Platform Studio UI (v2.2.0)
+   - Declarative Component Mounts (Zero DOM duplication on Grid/List toggle)
+   - Prompt-to-Product Catalog (Grid/List View, Checkboxes, Inline Edit, CRM Sync)
+   - Prompt-to-Audience AI Client Analyzer (Push to Ads Manager)
+   - AI Model & Token Connectors (LiteLLM / Gemini, OpenAI, DeepSeek, Local Ollama/vLLM)
    - Telephony Engine, Voice Audio Preview (KZ/RU), Company Profile & Call Script Studio
    ========================================================================= */
 
@@ -78,6 +79,10 @@ window.PlatformStudioUI = (() => {
      ========================================================================= */
   async function renderProductCatalog(root, h) {
     const { api, el, add, button, badge, notice, paragraph, edit, field, onSelectForAudience, onRefreshState } = h;
+    
+    // Strict clean mount: clear root once at start
+    root.replaceChildren();
+
     paragraph(root, 'Add products manually, sync from Bitrix24 / MoySklad, or enter a prompt so AI researches real specs and pricing from the internet.', 'lead');
 
     const loading = el('p', 'Loading catalog...', 'muted');
@@ -91,10 +96,10 @@ window.PlatformStudioUI = (() => {
     }
     loading.remove();
 
-    // Prompt-to-Product Box
+    // Card 1: Prompt-to-Product Box
     const promptBox = el('div', undefined, 'card studio-highlight');
-    promptBox.append(el('h3', '✨ Prompt-to-Product AI Research'));
-    paragraph(promptBox, 'Enter any product or service name/description. AI will search the internet for real specifications, models, and KZT price ranges to fill your product card.', 'muted');
+    promptBox.append(el('h3', '✨ Prompt-to-Product AI Web Research'));
+    paragraph(promptBox, 'Enter any product or service name/description. AI searches the internet for real specifications, models, and KZT price ranges to fill your product card.', 'muted');
 
     const promptRow = el('div', undefined, 'studio-inline-row');
     const pInput = el('input');
@@ -105,6 +110,8 @@ window.PlatformStudioUI = (() => {
     pLang.options[0].value = 'ru';
     pLang.options[1].value = 'kz';
 
+    const draftContainer = el('div', undefined, 'studio-draft-wrapper');
+
     const genBtn = button('✨ Research & Fill Card', async () => {
       const q = pInput.value.trim();
       if (q.length < 3) throw Error('Enter at least 3 characters describing the product');
@@ -112,12 +119,14 @@ window.PlatformStudioUI = (() => {
       const r = await api('/studio/products/from-prompt', 'POST', { prompt: q, lang: pLang.value, auto_save: false });
       lastProductDraft = r;
       notice('Product data researched using ' + (r.model_used || 'AI'));
-      renderProductCatalog(root, h);
+      renderDraft();
     }, 'primary-btn');
     add(promptRow, pInput, pLang, genBtn);
-    promptBox.append(promptRow);
+    promptBox.append(promptRow, draftContainer);
 
-    if (lastProductDraft && lastProductDraft.draft) {
+    function renderDraft() {
+      draftContainer.replaceChildren();
+      if (!lastProductDraft || !lastProductDraft.draft) return;
       const d = lastProductDraft.draft;
       const draftCard = el('div', undefined, 'studio-draft-box');
       draftCard.append(el('h4', `Draft Ready (${lastProductDraft.model_used || 'AI'})`));
@@ -174,128 +183,163 @@ window.PlatformStudioUI = (() => {
         }, 'primary-btn'),
         button('Discard Draft', async () => {
           lastProductDraft = null;
-          renderProductCatalog(root, h);
+          renderDraft();
         }, 'secondary-btn')
       );
       draftCard.append(dActions);
-      promptBox.append(draftCard);
+      draftContainer.append(draftCard);
     }
+    renderDraft();
     root.append(promptBox);
 
-    // Toolbar: View switcher, Manual Add, CRM Sync, Analyze Selected
+    // Toolbar: View switcher, Manual Add, CRM Sync, Audience Action
     const bar = el('div', undefined, 'studio-toolbar');
     const leftTools = el('div', undefined, 'actions');
-    const gridBtn = button('▦ Grid View', async () => { viewMode = 'grid'; renderProductCatalog(root, h); }, viewMode === 'grid' ? 'primary-btn' : 'secondary-btn');
-    const listBtn = button('☰ List View', async () => { viewMode = 'list'; renderProductCatalog(root, h); }, viewMode === 'list' ? 'primary-btn' : 'secondary-btn');
+    const gridBtn = el('button', '▦ Grid View', 'primary-btn');
+    gridBtn.type = 'button';
+    const listBtn = el('button', '☰ List View', 'secondary-btn');
+    listBtn.type = 'button';
+
+    gridBtn.onclick = () => {
+      viewMode = 'grid';
+      gridBtn.className = 'primary-btn';
+      listBtn.className = 'secondary-btn';
+      renderItems();
+    };
+    listBtn.onclick = () => {
+      viewMode = 'list';
+      gridBtn.className = 'secondary-btn';
+      listBtn.className = 'primary-btn';
+      renderItems();
+    };
+
     const addBtn = button('+ Add Manual Product', async () => {
       openProductModal(null, h, () => renderProductCatalog(root, h));
     }, 'secondary-btn');
+
     const syncB24 = button('🔄 Sync Bitrix24', async () => {
       const r = await api('/studio/products/sync-crm', 'POST', { source: 'bitrix24', limit: 20 });
       notice(`Imported ${r.imported_count} products from Bitrix24`);
       if (onRefreshState) await onRefreshState(false);
       renderProductCatalog(root, h);
     }, 'secondary-btn');
+
     const syncMS = button('🔄 Sync MoySklad', async () => {
       const r = await api('/studio/products/sync-crm', 'POST', { source: 'moysklad', limit: 20 });
       notice(`Imported ${r.imported_count} products from MoySklad`);
       if (onRefreshState) await onRefreshState(false);
       renderProductCatalog(root, h);
     }, 'secondary-btn');
+
     add(leftTools, gridBtn, listBtn, addBtn, syncB24, syncMS);
 
     const rightTools = el('div', undefined, 'actions');
-    const selectedArr = studioProducts.filter(p => selectedProductIds.has(p.id));
-    if (selectedArr.length) {
-      rightTools.append(button(`🎯 Find Target Audiences (${selectedArr.length})`, async () => {
-        if (onSelectForAudience) onSelectForAudience(selectedArr[0]);
-      }, 'call-btn'));
-    }
     add(bar, leftTools, rightTools);
     root.append(bar);
 
-    // Products Grid or List
-    if (viewMode === 'grid') {
-      const grid = el('div', undefined, 'grid');
-      for (const item of studioProducts) {
-        const c = el('article', undefined, 'card studio-product-card' + (selectedProductIds.has(item.id) ? ' is-checked' : ''));
-        const head = el('div', undefined, 'studio-card-head');
-        const chk = el('input');
-        chk.type = 'checkbox';
-        chk.checked = selectedProductIds.has(item.id);
-        chk.onchange = () => {
-          if (chk.checked) selectedProductIds.add(item.id);
-          else selectedProductIds.delete(item.id);
-          renderProductCatalog(root, h);
-        };
-        const titleWrap = el('div');
-        titleWrap.append(el('h3', item.name));
-        if (item.name_ru && item.name_ru !== item.name) titleWrap.append(el('div', item.name_ru, 'muted'));
-        add(head, chk, titleWrap, badge(item.source || 'manual', 'cyan-badge'));
-        c.append(head);
+    // Dedicated Dynamic Container for Items
+    const itemsContainer = el('div', undefined, 'studio-items-container');
+    root.append(itemsContainer);
 
-        if (item.category) c.append(el('div', 'Category: ' + item.category, 'product-meta'));
-        if (item.price_range) c.append(el('div', item.price_range, 'product-price'));
-        if (item.specs) c.append(el('p', item.specs, 'product-meta'));
-        if (item.models?.length) c.append(el('div', 'Models: ' + item.models.join(' · '), 'muted'));
-
-        const acts = el('div', undefined, 'actions');
-        add(acts,
-          button('Edit', async () => openProductModal(item, h, () => renderProductCatalog(root, h)), 'secondary-btn'),
-          button('🎯 Find Clients', async () => { if (onSelectForAudience) onSelectForAudience(item); }, 'primary-btn'),
-          button('Delete', async () => {
-            await api('/studio/products/' + item.id, 'DELETE');
-            selectedProductIds.delete(item.id);
-            notice('Product deleted');
-            if (onRefreshState) await onRefreshState(false);
-            renderProductCatalog(root, h);
-          }, 'secondary-btn')
-        );
-        c.append(acts);
-        grid.append(c);
+    function updateActionToolbar() {
+      rightTools.replaceChildren();
+      const selectedArr = studioProducts.filter(p => selectedProductIds.has(p.id));
+      if (selectedArr.length) {
+        rightTools.append(button(`🎯 Find Target Audiences (${selectedArr.length})`, async () => {
+          if (onSelectForAudience) onSelectForAudience(selectedArr[0]);
+        }, 'call-btn'));
       }
-      root.append(grid);
-    } else {
-      const wrap = el('div', undefined, 'card');
-      const tbl = el('table');
-      const thead = el('thead');
-      const hr = el('tr');
-      for (const col of ['', 'Product (KZ / RU)', 'Category', 'Price Range', 'Source', 'Actions']) hr.append(el('th', col));
-      thead.append(hr);
-      tbl.append(thead);
-      const tbody = el('tbody');
-      for (const item of studioProducts) {
-        const tr = el('tr');
-        const tdChk = el('td');
-        const chk = el('input');
-        chk.type = 'checkbox';
-        chk.checked = selectedProductIds.has(item.id);
-        chk.onchange = () => {
-          if (chk.checked) selectedProductIds.add(item.id);
-          else selectedProductIds.delete(item.id);
-          renderProductCatalog(root, h);
-        };
-        tdChk.append(chk);
-
-        const tdName = el('td');
-        tdName.append(el('strong', item.name));
-        if (item.name_ru) tdName.append(el('div', item.name_ru, 'muted'));
-
-        const tdActs = el('td');
-        const acts = el('div', undefined, 'actions');
-        add(acts,
-          button('Edit', async () => openProductModal(item, h, () => renderProductCatalog(root, h)), 'secondary-btn'),
-          button('🎯 Clients', async () => { if (onSelectForAudience) onSelectForAudience(item); }, 'primary-btn')
-        );
-        tdActs.append(acts);
-
-        add(tr, tdChk, tdName, el('td', item.category || '—'), el('td', item.price_range || '—'), el('td', item.source || 'manual'), tdActs);
-        tbody.append(tr);
-      }
-      tbl.append(tbody);
-      wrap.append(tbl);
-      root.append(wrap);
     }
+
+    function renderItems() {
+      itemsContainer.replaceChildren();
+      updateActionToolbar();
+
+      if (viewMode === 'grid') {
+        const grid = el('div', undefined, 'grid');
+        for (const item of studioProducts) {
+          const c = el('article', undefined, 'card studio-product-card' + (selectedProductIds.has(item.id) ? ' is-checked' : ''));
+          const head = el('div', undefined, 'studio-card-head');
+          const chk = el('input');
+          chk.type = 'checkbox';
+          chk.checked = selectedProductIds.has(item.id);
+          chk.onchange = () => {
+            if (chk.checked) selectedProductIds.add(item.id);
+            else selectedProductIds.delete(item.id);
+            c.classList.toggle('is-checked', chk.checked);
+            updateActionToolbar();
+          };
+          const titleWrap = el('div');
+          titleWrap.append(el('h3', item.name));
+          if (item.name_ru && item.name_ru !== item.name) titleWrap.append(el('div', item.name_ru, 'muted'));
+          add(head, chk, titleWrap, badge(item.source || 'manual', 'cyan-badge'));
+          c.append(head);
+
+          if (item.category) c.append(el('div', 'Category: ' + item.category, 'product-meta'));
+          if (item.price_range) c.append(el('div', item.price_range, 'product-price'));
+          if (item.specs) c.append(el('p', item.specs, 'product-meta'));
+          if (item.models?.length) c.append(el('div', 'Models: ' + item.models.join(' · '), 'muted'));
+
+          const acts = el('div', undefined, 'actions');
+          add(acts,
+            button('Edit', async () => openProductModal(item, h, () => renderProductCatalog(root, h)), 'secondary-btn'),
+            button('🎯 Find Clients', async () => { if (onSelectForAudience) onSelectForAudience(item); }, 'primary-btn'),
+            button('Delete', async () => {
+              await api('/studio/products/' + item.id, 'DELETE');
+              selectedProductIds.delete(item.id);
+              notice('Product deleted');
+              if (onRefreshState) await onRefreshState(false);
+              renderProductCatalog(root, h);
+            }, 'secondary-btn')
+          );
+          c.append(acts);
+          grid.append(c);
+        }
+        itemsContainer.append(grid);
+      } else {
+        const wrap = el('div', undefined, 'card');
+        const tbl = el('table');
+        const thead = el('thead');
+        const hr = el('tr');
+        for (const col of ['', 'Product (KZ / RU)', 'Category', 'Price Range', 'Source', 'Actions']) hr.append(el('th', col));
+        thead.append(hr);
+        tbl.append(thead);
+        const tbody = el('tbody');
+        for (const item of studioProducts) {
+          const tr = el('tr');
+          const tdChk = el('td');
+          const chk = el('input');
+          chk.type = 'checkbox';
+          chk.checked = selectedProductIds.has(item.id);
+          chk.onchange = () => {
+            if (chk.checked) selectedProductIds.add(item.id);
+            else selectedProductIds.delete(item.id);
+            updateActionToolbar();
+          };
+          tdChk.append(chk);
+
+          const tdName = el('td');
+          tdName.append(el('strong', item.name));
+          if (item.name_ru) tdName.append(el('div', item.name_ru, 'muted'));
+
+          const tdActs = el('td');
+          const acts = el('div', undefined, 'actions');
+          add(acts,
+            button('Edit', async () => openProductModal(item, h, () => renderProductCatalog(root, h)), 'secondary-btn'),
+            button('🎯 Clients', async () => { if (onSelectForAudience) onSelectForAudience(item); }, 'primary-btn')
+          );
+          tdActs.append(acts);
+
+          add(tr, tdChk, tdName, el('td', item.category || '—'), el('td', item.price_range || '—'), el('td', item.source || 'manual'), tdActs);
+          tbody.append(tr);
+        }
+        tbl.append(tbody);
+        wrap.append(tbl);
+        itemsContainer.append(wrap);
+      }
+    }
+
+    renderItems();
   }
 
   function openProductModal(existing, h, onDone) {
@@ -335,6 +379,10 @@ window.PlatformStudioUI = (() => {
      ========================================================================= */
   async function renderAudienceAnalyzer(root, h, preselectedProduct = null) {
     const { api, el, add, button, badge, notice, paragraph, onOpenAdsManager } = h;
+    
+    // Strict clean mount
+    root.replaceChildren();
+
     paragraph(root, 'Choose a product or describe your business category. AI will analyze what types of clients buy it in Kazakhstan and let you push selected ranges directly into Ads Manager.', 'lead');
 
     try {
@@ -366,6 +414,8 @@ window.PlatformStudioUI = (() => {
     const lbl1 = el('label', 'Select Product from Catalog'); lbl1.append(pSelect);
     const lbl2 = el('label', 'Describe Target Category or Buyer Constraints (Prompt)'); lbl2.append(promptArea);
 
+    const resultsContainer = el('div', undefined, 'studio-analysis-results');
+
     const analyzeBtn = button('🧠 Analyze Target Audiences with AI', async () => {
       notice('AI is analyzing B2B/B2G/B2C client segments...');
       const res = await api('/studio/audiences/analyze-prompt', 'POST', {
@@ -375,14 +425,17 @@ window.PlatformStudioUI = (() => {
       lastAudienceAnalysis = res;
       selectedProposedIdx = new Set((res.segments || []).map((_, idx) => idx));
       notice(`Found ${(res.segments || []).length} target client ranges (${res.model_used || 'AI'})`);
-      renderAudienceAnalyzer(root, h, preselectedProduct);
+      renderResults();
     }, 'primary-btn');
 
     add(box, lbl1, lbl2, el('div', undefined, 'actions'));
     box.lastChild.append(analyzeBtn);
-    root.append(box);
+    root.append(box, resultsContainer);
 
-    if (lastAudienceAnalysis && lastAudienceAnalysis.segments?.length) {
+    function renderResults() {
+      resultsContainer.replaceChildren();
+      if (!lastAudienceAnalysis || !lastAudienceAnalysis.segments?.length) return;
+
       const resCard = el('div', undefined, 'card');
       resCard.append(el('h3', 'Proposed Customer Ranges (Select to Apply)'));
       if (lastAudienceAnalysis.summary) paragraph(resCard, lastAudienceAnalysis.summary, 'muted');
@@ -437,15 +490,21 @@ window.PlatformStudioUI = (() => {
 
       add(applyRow, campSel, applyBtn);
       resCard.append(applyRow);
-      root.append(resCard);
+      resultsContainer.append(resCard);
     }
+
+    renderResults();
   }
 
   /* =========================================================================
      3. AI MODEL & TOKEN CONNECTORS + CRM/ERP CONNECTORS
      ========================================================================= */
   async function renderConnectors(root, h) {
-    const { api, el, add, button, badge, notice, paragraph, edit, field } = h;
+    const { api, el, add, button, badge, notice, paragraph } = h;
+    
+    // Strict clean mount
+    root.replaceChildren();
+
     paragraph(root, 'Configure API access tokens for proprietary LLMs (Gemini, OpenAI, DeepSeek, Anthropic) or self-hosted local models (Ollama, vLLM, LM Studio), plus CRM/ERP product connectors.', 'lead');
 
     let envInfo = {};
@@ -622,6 +681,10 @@ window.PlatformStudioUI = (() => {
      ========================================================================= */
   async function renderCompanyProfile(root, h) {
     const { api, el, add, button, notice, paragraph, onRefreshState } = h;
+    
+    // Strict clean mount
+    root.replaceChildren();
+
     paragraph(root, 'Set your company identity and default commercial offer PDFs. The AI Voice Agent automatically introduces itself from this company on every call.', 'lead');
 
     try {
@@ -683,6 +746,10 @@ window.PlatformStudioUI = (() => {
      ========================================================================= */
   async function renderTelephonyAndScript(root, h) {
     const { api, el, add, button, notice, paragraph, onRefreshState } = h;
+    
+    // Strict clean mount
+    root.replaceChildren();
+
     paragraph(root, 'Configure Asterisk PBX concurrency & call forwarding queue, listen to Kazakh/Russian voice samples, and preview/edit the exact AI call script.', 'lead');
 
     try {
@@ -747,7 +814,7 @@ window.PlatformStudioUI = (() => {
     telCard.append(vActs);
     root.append(telCard);
 
-    // Card 3: Call Script & Prompt Customizer (Zero Glitch Preview)
+    // Card 2: Call Script & Prompt Customizer (Zero Glitch Preview)
     const scCard = el('div', undefined, 'card studio-highlight');
     scCard.append(el('h3', '📝 Call Script & Prompt Studio (Exact AI Speech Preview)'));
     paragraph(scCard, 'Customize what the AI says during calls and preview the exact isolated prompt before calling. Hardcoded WhatsApp CRM prompts are completely removed.', 'muted');
@@ -779,6 +846,8 @@ window.PlatformStudioUI = (() => {
     add(sGrid, wrap('Product to Pitch', pSel), wrap('Call Language', lSel));
     scCard.append(sGrid, wrap('Custom Opening Greeting (Optional)', gInput), wrap('Custom Call Instructions / Prompt (Optional)', prInput));
 
+    const scriptDraftContainer = el('div', undefined, 'studio-script-draft');
+
     const scActs = el('div', undefined, 'actions');
     add(scActs,
       button('👁️ Preview Exact AI Call Script', async () => {
@@ -790,7 +859,7 @@ window.PlatformStudioUI = (() => {
         });
         lastScriptPreview = res;
         notice('Preview generated! Review the exact greeting and prompt below.');
-        renderTelephonyAndScript(root, h);
+        renderScriptDraft();
       }, 'primary-btn'),
       button('💾 Save Script as Default', async () => {
         const updated = { ...tel, voice_name: tVoice.value };
@@ -805,9 +874,11 @@ window.PlatformStudioUI = (() => {
         notice(`Saved default ${lSel.value.toUpperCase()} call script!`);
       }, 'secondary-btn')
     );
-    scCard.append(scActs);
+    scCard.append(scActs, scriptDraftContainer);
 
-    if (lastScriptPreview) {
+    function renderScriptDraft() {
+      scriptDraftContainer.replaceChildren();
+      if (!lastScriptPreview) return;
       const prevBox = el('div', undefined, 'studio-draft-box');
       prevBox.append(el('h4', `Opening Greeting (${lastScriptPreview.lang.toUpperCase()} · Voice: ${lastScriptPreview.voice_name})`));
       prevBox.append(el('p', '“' + lastScriptPreview.greeting + '”', 'studio-quote'));
@@ -816,9 +887,10 @@ window.PlatformStudioUI = (() => {
       prevBox.append(button('🔊 Listen to This Greeting', async () => {
         await playVoicePreview(api, notice, lastScriptPreview.voice_name, lastScriptPreview.lang, lastScriptPreview.greeting);
       }, 'secondary-btn'));
-      scCard.append(prevBox);
+      scriptDraftContainer.append(prevBox);
     }
 
+    renderScriptDraft();
     root.append(scCard);
   }
 

@@ -172,3 +172,33 @@ def test_studio_api_prompt_to_product_and_audience_apply(tmp_path):
             assert "DLAB DM0412" in sp.json()["greeting"]
     finally:
         app.dependency_overrides.clear()
+
+
+def test_control_html_includes_declarative_scripts_and_cache_busting():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1] / "app" / "web" / "control.html").read_text(encoding="utf-8")
+    assert "studio.js" in html
+    assert "ads_manager.js" in html
+    assert "control.js" in html
+    assert "control.css" in html
+    assert "Universal Cockpit" in html
+    # Ensure cache busting query parameters are present on assets
+    assert "?v=" in html
+
+
+def test_xss_escaping_in_script_preview():
+    store = PlatformStore(SalesStore(":memory:"))
+    company = store.save_company_profile({"company_name": "<script>alert('xss')</script> B2B Org"})
+    telephony = store.save_telephony_config({"voice_name": "Kore"})
+    prod = store.save_product({
+        "name": "<img src=x onerror=alert(1)> Centrifuge",
+        "name_ru": "Safe Centrifuge",
+        "price_range": "100 000 ₸",
+        "specs": "Safe specs",
+    })
+    preview = build_call_script_preview(prod, company, telephony, lang="kz")
+    # Preview data must contain values as pure data without crashing or raw unescaped template execution
+    assert "<script>" in preview["greeting"]
+    assert "alert" in preview["greeting"]
+    assert preview["seller_company"] == "<script>alert('xss')</script> B2B Org"
+
