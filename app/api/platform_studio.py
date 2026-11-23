@@ -8,19 +8,20 @@ from pathlib import Path
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.api.control_center import auth
 from app.core.config import get_settings
 from app.services.ads_store import AdsStore
 from app.services.ai_engine import AIEngine, AIEngineError, build_call_script_preview
+from app.services.crm_handoff import CRMHandoffService, verify_webhook_signature
 from app.services.market_search import MarketSearchEngine
 from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
 from app.services.web_scraper import SSRFBlockedError
 
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 
 router = APIRouter(prefix="/platform/api/studio", tags=["Platform Studio"])
 
@@ -37,6 +38,11 @@ def studio_ai(store: PlatformStore = Depends(studio_store)) -> AIEngine:
 def studio_market() -> MarketSearchEngine:
     settings = get_settings()
     return MarketSearchEngine(SalesStore(settings.lead_hunter_db))
+
+
+def studio_handoff() -> CRMHandoffService:
+    settings = get_settings()
+    return CRMHandoffService(SalesStore(settings.lead_hunter_db), settings)
 
 
 # ------------------------------------------------------------------
@@ -575,3 +581,76 @@ async def preview_voice_audio(data: VoicePreviewIn, store: PlatformStore = Depen
         "voice_name": data.voice_name,
         "lang": "kk-KZ" if data.lang == "kz" else "ru-RU",
     }
+
+
+# ------------------------------------------------------------------
+# 6. End-to-End Autonomous CRM Handoff & Pipeline Analytics
+# ------------------------------------------------------------------
+class CallOutcomeIn(BaseModel):
+    phone: str = Field(min_length=7, max_length=32)
+    outcome: str = Field(pattern=r"^(qualified|callback|rejected|no_answer)$")
+    lead_id: int = 0
+    company: str = Field(default="", max_length=200)
+    director: str = Field(default="", max_length=120)
+    product_key: str = Field(default="", max_length=120)
+    transcript: str = Field(default="", max_length=5000)
+    recording_url: str = Field(default="", max_length=500)
+    opportunity_kzt: float = Field(default=0.0, ge=0.0)
+
+
+@router.post("/webhooks/call-outcome")
+async def webhook_call_outcome(
+    request: Request,
+    handoff: CRMHandoffService = Depends(studio_handoff),
+):
+    """Cryptographically verified webhook receiving PBX call outcomes and creating Bitrix24 Deals."""
+    raw_body = await request.body()
+    sig = request.headers.get("X-LeadHunter-Signature", "")
+    settings = get_settings()
+    secret = settings.lead_hunter_api_token.get_secret_value() if settings.lead_hunter_api_token else ""
+    if not verify_webhook_signature(raw_body, sig, secret):
+        raise HTTPException(401, "invalid_webhook_signature")
+
+    try:
+        payload = CallOutcomeIn.model_validate_json(raw_body)
+    except Exception as exc:
+        raise HTTPException(400, f"invalid_payload: {exc}") from None
+
+    return await handoff.process_call_outcome(
+        phone=payload.phone,
+        outcome=payload.outcome,
+        lead_id=payload.lead_id,
+        company=payload.company,
+        director=payload.director,
+        product_key=payload.product_key,
+        transcript=payload.transcript,
+        recording_url=payload.recording_url,
+        opportunity_kzt=payload.opportunity_kzt,
+    )
+
+
+@router.post("/leads/{lead_id}/handoff", dependencies=[Depends(auth)])
+async def manual_lead_handoff(
+    lead_id: int,
+    handoff: CRMHandoffService = Depends(studio_handoff),
+):
+    astore = AdsStore(handoff.base)
+    lead = astore.get_lead(lead_id)
+    if not lead:
+        raise HTTPException(404, "lead_not_found")
+    return await handoff.process_call_outcome(
+        phone=lead.get("phone_e164") or lead.get("phone_raw") or "",
+        outcome="qualified",
+        lead_id=lead_id,
+        company=lead.get("company") or "",
+        director=lead.get("director") or "",
+        product_key=lead.get("service") or lead.get("product_key") or "",
+        transcript=f"Manual CRM handoff triggered for {lead.get('company', '')} (ICP Score: {lead.get('icp_score', 0)}).",
+        opportunity_kzt=float(lead.get("contract_sum_kzt") or 0.0),
+    )
+
+
+@router.get("/analytics", dependencies=[Depends(auth)])
+def get_pipeline_analytics(handoff: CRMHandoffService = Depends(studio_handoff)):
+    return handoff.get_pipeline_analytics()
+

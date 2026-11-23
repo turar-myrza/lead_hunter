@@ -1,13 +1,14 @@
 'use strict';
 
 /* =========================================================================
-   Lead Hunter Platform Studio UI (v2.5.0)
+   Lead Hunter Platform Studio UI (v2.7.0)
    - Declarative Component Mounts (Zero DOM duplication on Grid/List toggle)
    - LiteLLM Unified Router & Tier Connectors (Research, Reasoning, Test, Local)
    - Real-Time Model Ping (Latency, Token Count, Estimated Cost)
    - SSRF-Safe Prompt-to-Product Web Scraper & Pydantic Schema Extractor
    - Branded Commercial Offer HTML/PDF Preview Generator
    - SQLite FTS5 BM25 Market Seed Explorer & Prompt-to-Audience Analyzer
+   - End-to-End Bitrix24 CRM Handoff & Pipeline Funnel Analytics
    - Telephony Engine, Voice Audio Preview (KZ/RU), Company Profile & Call Script Studio
    ========================================================================= */
 
@@ -586,25 +587,28 @@ window.PlatformStudioUI = (() => {
 
     let envInfo = {};
     let usageInfo = {};
+    let funnelInfo = {};
     try {
-      const [mRes, sRes, uRes] = await Promise.all([
+      const [mRes, sRes, uRes, fRes] = await Promise.all([
         api('/studio/connectors/models'),
         api('/studio/settings'),
         api('/studio/ai-usage').catch(() => ({ total_calls: 0, total_tokens: 0, estimated_cost_usd: 0, avg_latency_ms: 0 })),
+        api('/studio/analytics').catch(() => ({ products: 0, seeds_indexed: 0, leads: 0, calls_today: 0, calls_qualified: 0, deals_created_in_crm: 0 })),
       ]);
       aiProviders = mRes.items || [];
       envInfo = mRes;
       studioSettings = sRes;
       usageInfo = uRes || {};
+      funnelInfo = fRes || {};
     } catch (e) {
       root.append(el('p', 'Failed to load connectors: ' + e.message, 'muted'));
       return;
     }
 
-    // Telemetry & Spend Banner
-    const teleCard = el('div', undefined, 'card studio-highlight');
-    teleCard.append(el('h3', '📊 AI Router Telemetry & Token Spend'));
-    const tGrid = el('div', undefined, 'studio-summary-bar');
+    // Pipeline Funnel & Bitrix24 CRM Analytics
+    const funnelCard = el('div', undefined, 'card');
+    funnelCard.append(el('h3', '📈 End-to-End Autonomous Funnel & CRM Handoff'));
+    const fGrid = el('div', undefined, 'studio-summary-bar');
     const metric = (lbl, val, sub) => {
       const b = el('div', undefined, 'studio-stat-box');
       b.append(el('span', lbl, 'muted'));
@@ -612,6 +616,19 @@ window.PlatformStudioUI = (() => {
       if (sub) b.append(el('small', sub, 'muted'));
       return b;
     };
+    add(fGrid,
+      metric('Catalog Products', String(funnelInfo.products || 0), `${(funnelInfo.seeds_indexed || 0).toLocaleString()} indexed market seeds`),
+      metric('Discovered Leads', String(funnelInfo.leads || 0), `${funnelInfo.audiences || 0} active audiences`),
+      metric('AI Calls Today', String(funnelInfo.calls_today || 0), `${funnelInfo.calls_total || 0} total · ${funnelInfo.offers_sent || 0} WhatsApp offers`),
+      metric('CRM Deals Created', String(funnelInfo.deals_created_in_crm || 0), `${funnelInfo.calls_qualified || 0} qualified (${funnelInfo.qualification_rate_pct || 0}% rate)`)
+    );
+    funnelCard.append(fGrid);
+    root.append(funnelCard);
+
+    // Telemetry & Spend Banner
+    const teleCard = el('div', undefined, 'card studio-highlight');
+    teleCard.append(el('h3', '📊 AI Router Telemetry & Token Spend'));
+    const tGrid = el('div', undefined, 'studio-summary-bar');
     add(tGrid,
       metric('Total AI Invocations', String(usageInfo.total_calls || 0)),
       metric('Total Tokens Processed', (usageInfo.total_tokens || 0).toLocaleString(), `${(usageInfo.prompt_tokens || 0).toLocaleString()} in / ${(usageInfo.completion_tokens || 0).toLocaleString()} out`),

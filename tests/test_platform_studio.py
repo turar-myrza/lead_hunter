@@ -691,6 +691,131 @@ def test_isolated_call_context_and_daily_cap_enforcement(tmp_path):
     assert updated_lead["status"] == "deferred_cap"
 
 
+def test_webhook_hmac_signature_verification(tmp_path):
+    import hashlib
+    import hmac
+    from app.api.platform_studio import studio_handoff
+    from app.services.crm_handoff import CRMHandoffService, verify_webhook_signature
+
+    secret = "studio-test-secret"
+    body = b'{"phone":"+77056945245","outcome":"qualified"}'
+    valid_sig = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+    assert verify_webhook_signature(body, valid_sig, secret) is True
+    assert verify_webhook_signature(body + b" ", valid_sig, secret) is False
+    assert verify_webhook_signature(body, "sha256=deadbeef", secret) is False
+    assert verify_webhook_signature(body, "", secret) is False
+
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[studio_handoff] = lambda: CRMHandoffService(base, settings)
+    try:
+        with TestClient(app) as client:
+            # Missing or forged signature must be rejected with 401
+            resp_bad = client.post(
+                "/platform/api/studio/webhooks/call-outcome",
+                content=body,
+                headers={"X-LeadHunter-Signature": "sha256=forged12345"},
+            )
+            assert resp_bad.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_end_to_end_call_outcome_creates_bitrix_deal_and_contact(tmp_path):
+    import hashlib
+    import hmac
+    from app.api.platform_studio import studio_handoff
+    from app.services.crm_handoff import CRMHandoffService
+
+    settings = _make_settings(tmp_path)
+    base = SalesStore(settings.lead_hunter_db)
+    pstore = PlatformStore(base)
+    astore = AdsStore(base)
+    pstore.save_crm_connectors({"bitrix24_webhook": "https://b24.example.kz/rest/1/testtoken"})
+
+    camp = astore.create_campaign(name="B2B Q2", product_key="centrifuges", objective="call_then_offer", lang="ru")
+    aud = astore.create_audience(camp["id"], name="Hospitals", segment="b2b", rules={"regions": ["almaty"]})
+    astore.upsert_leads([{
+        "campaign_id": camp["id"],
+        "audience_id": aud["id"],
+        "dedupe_key": "hosp-1",
+        "company": "Almaty Med Clinic",
+        "city": "Almaty",
+        "phone_raw": "+77056945245",
+        "phone_e164": "+77056945245",
+        "director": "Данияр",
+        "icp_score": 95,
+    }])
+    lead = astore.list_leads(campaign_ids=[camp["id"]])["items"][0]
+
+    bitrix_calls = []
+
+    def bitrix_mock(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        bitrix_calls.append(url)
+        if "crm.contact.add" in url:
+            return httpx.Response(200, json={"result": 101})
+        if "crm.deal.add" in url:
+            body = json.loads(request.content)
+            assert body["fields"]["CONTACT_ID"] == "101"
+            assert "Almaty Med Clinic" in body["fields"]["TITLE"]
+            assert "https://pbx.example.kz/rec/999.wav" in body["fields"]["COMMENTS"]
+            return httpx.Response(200, json={"result": 505})
+        if "crm.timeline.comment.add" in url:
+            return httpx.Response(200, json={"result": True})
+        return httpx.Response(404)
+
+    handoff_svc = CRMHandoffService(base, settings, transport=httpx.MockTransport(bitrix_mock))
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[studio_handoff] = lambda: handoff_svc
+    app.dependency_overrides[cc_service] = lambda: ControlCenter(ControlStore(base), settings)
+    try:
+        with TestClient(app) as client:
+            payload_bytes = json.dumps({
+                "phone": "+77056945245",
+                "outcome": "qualified",
+                "lead_id": lead["id"],
+                "company": "Almaty Med Clinic",
+                "director": "Данияр",
+                "product_key": "centrifuges",
+                "transcript": "Client agreed to receive centrifuge commercial offer and requested invoice.",
+                "recording_url": "https://pbx.example.kz/rec/999.wav",
+                "opportunity_kzt": 450000.0,
+            }).encode("utf-8")
+            sig = "sha256=" + hmac.new(b"studio-test-secret", payload_bytes, hashlib.sha256).hexdigest()
+
+            res = client.post(
+                "/platform/api/studio/webhooks/call-outcome",
+                content=payload_bytes,
+                headers={"X-LeadHunter-Signature": sig, "Content-Type": "application/json"},
+            )
+            assert res.status_code == 200
+            out = res.json()
+            assert out["outcome"] == "qualified"
+            assert out["bitrix_contact_id"] == "101"
+            assert out["bitrix_deal_id"] == "505"
+            assert out["handoff_status"] == "created"
+            assert len(bitrix_calls) == 3
+
+            # Verify lead status transitioned to handoff_crm
+            assert astore.get_lead(lead["id"])["status"] == "handoff_crm"
+
+            # Verify analytics endpoint reflects qualified deal
+            h = {"X-Control-Request": "1"}
+            client.post("/platform/api/login", json={"password": "studio-test-secret"}, headers=h)
+            an = client.get("/platform/api/studio/analytics", headers=h)
+            assert an.status_code == 200
+            a_data = an.json()
+            assert a_data["calls_qualified"] == 1
+            assert a_data["deals_created_in_crm"] == 1
+            assert a_data["qualification_rate_pct"] == 100.0
+    finally:
+        app.dependency_overrides.clear()
+
+
+
 
 
 
