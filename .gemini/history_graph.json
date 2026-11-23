@@ -110,5 +110,12 @@
     "result_summary": "1) Created CRMHandoffService in app/services/crm_handoff.py with constant-time HMAC-SHA256 webhook signature verification (verify_webhook_signature), Bitrix24 Contact + Deal + Timeline Comment creation attaching call transcripts and recordings, and end-to-end funnel analytics; 2) Exposed /platform/api/studio/webhooks/call-outcome, /leads/{id}/handoff, and /analytics endpoints in app/api/platform_studio.py; 3) Added End-to-End Autonomous Funnel & CRM Handoff telemetry card in app/web/studio.js; 4) Bumped VERSION to 2.7.0, passed all 34 pytest tests on whatflow, and verified live deployment.",
     "parent": "node-2.6.0-step-5-isolated-voice-sdr-and-ami-security",
     "timestamp": "2026-11-23T14:55:00+05:00"
+  },
+  {
+    "id": "node-2.8.0-separated-tabs-multi-company-and-templates",
+    "prompt_summary": "Separate AI Model Connectors and CRM & ERP Sync into distinct tabs; add Multi-Company Entities (choose advertising entity per product or globally) and Document Templates Uploader (Offer, Inquiry, Contract, Presentation variations); 37/37 tests passing",
+    "result_summary": "1) Split INTEGRATIONS & ORG navigation into 4 dedicated tabs: AI Connectors, CRM & ERP Sync, Company Entities, Document Templates; 2) Built am_company_entities table & CRUD/activate APIs allowing multiple legal entities and per-product company_id selection; 3) Built am_document_templates table & secure multipart upload/download/activate APIs (.docx, .pdf, .html, .txt, .md) with extension allowlist, 10MB cap, and path-traversal protection; 4) Installed python-multipart on whatflow, bumped VERSION to 2.8.0, passed all 37 pytest tests, and deployed live.",
+    "parent": "node-2.7.0-step-6-bitrix24-crm-handoff-and-analytics",
+    "timestamp": "2026-11-23T15:20:00+05:00"
   }
 ]
