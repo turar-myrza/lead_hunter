@@ -16,7 +16,7 @@ from app.services.ai_engine import AIEngine, AIEngineError, build_call_script_pr
 from app.services.platform_store import AVAILABLE_VOICES, PlatformStore
 from app.services.sales_store import SalesStore
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 router = APIRouter(prefix="/platform/api/studio", tags=["Platform Studio"])
 

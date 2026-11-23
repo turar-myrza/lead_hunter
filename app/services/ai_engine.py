@@ -12,7 +12,7 @@ import httpx
 from app.core.config import Settings
 from app.services.platform_store import PlatformStore
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 
 class AIEngineError(ValueError):

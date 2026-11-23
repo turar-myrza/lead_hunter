@@ -618,11 +618,72 @@ window.PlatformStudioUI = (() => {
   }
 
   /* =========================================================================
-     4. TELEPHONY ENGINE, VOICE AUDIO PREVIEW, COMPANY PROFILE & SCRIPT STUDIO
+     4. COMPANY PROFILE & COMMERCIAL OFFERS (DEDICATED TAB)
+     ========================================================================= */
+  async function renderCompanyProfile(root, h) {
+    const { api, el, add, button, notice, paragraph, onRefreshState } = h;
+    paragraph(root, 'Set your company identity and default commercial offer PDFs. The AI Voice Agent automatically introduces itself from this company on every call.', 'lead');
+
+    try {
+      studioSettings = await api('/studio/settings');
+    } catch (e) {
+      root.append(el('p', 'Failed to load company profile: ' + e.message, 'muted'));
+      return;
+    }
+
+    const company = studioSettings.company || {};
+    const wrap = (lbl, node) => { const l = el('label', lbl); l.append(node); return l; };
+
+    const compCard = el('div', undefined, 'card studio-highlight');
+    compCard.append(el('h3', '🏢 Our Company Identity & Commercial Offer PDFs'));
+    const cName = el('input'); cName.value = company.company_name || '';
+    const cBin = el('input'); cBin.value = company.bin || '';
+    const cCity = el('input'); cCity.value = company.city || '';
+    const cWeb = el('input'); cWeb.value = company.website || '';
+    const cMgr = el('input'); cMgr.value = company.manager_name || '';
+    const cPhone = el('input'); cPhone.value = company.manager_phone || '';
+    const cDesc = el('textarea'); cDesc.value = company.description || '';
+    const cPdfKz = el('input'); cPdfKz.value = company.default_pdf_kz || '';
+    const cPdfRu = el('input'); cPdfRu.value = company.default_pdf_ru || '';
+
+    const cGrid = el('div', undefined, 'studio-form-grid');
+    add(cGrid,
+      wrap('Company Name (AI introduces itself from here)', cName),
+      wrap('Company BIN', cBin),
+      wrap('City', cCity),
+      wrap('Website', cWeb),
+      wrap('Manager Name (for Call Forwarding)', cMgr),
+      wrap('Manager Phone', cPhone),
+      wrap('Default Commercial Offer PDF URL (KZ)', cPdfKz),
+      wrap('Default Commercial Offer PDF URL (RU)', cPdfRu)
+    );
+    compCard.append(cGrid, wrap('Company Description / Value Proposition', cDesc));
+    const cActs = el('div', undefined, 'actions');
+    cActs.append(button('💾 Save Company Profile', async () => {
+      await api('/studio/settings/company', 'PUT', {
+        company_name: cName.value.trim(),
+        bin: cBin.value.trim(),
+        city: cCity.value.trim(),
+        website: cWeb.value.trim(),
+        manager_name: cMgr.value.trim(),
+        manager_phone: cPhone.value.trim(),
+        description: cDesc.value.trim(),
+        default_pdf_kz: cPdfKz.value.trim(),
+        default_pdf_ru: cPdfRu.value.trim(),
+      });
+      notice('Company profile saved! AI will now introduce itself as ' + cName.value.trim());
+      if (onRefreshState) await onRefreshState(false);
+    }, 'primary-btn'));
+    compCard.append(cActs);
+    root.append(compCard);
+  }
+
+  /* =========================================================================
+     5. TELEPHONY ENGINE, VOICE AUDIO PREVIEW & CALL SCRIPT STUDIO
      ========================================================================= */
   async function renderTelephonyAndScript(root, h) {
     const { api, el, add, button, notice, paragraph, onRefreshState } = h;
-    paragraph(root, 'Configure your company identity, Asterisk PBX concurrency & forwarding queue, listen to Kazakh/Russian voice samples, and preview/edit the exact AI call script.', 'lead');
+    paragraph(root, 'Configure Asterisk PBX concurrency & call forwarding queue, listen to Kazakh/Russian voice samples, and preview/edit the exact AI call script.', 'lead');
 
     try {
       const [sRes, pRes] = await Promise.all([api('/studio/settings'), api('/studio/products')]);
@@ -634,55 +695,11 @@ window.PlatformStudioUI = (() => {
       return;
     }
 
-    const company = studioSettings.company || {};
     const tel = studioSettings.telephony || {};
     const voices = studioSettings.voices || [];
     const wrap = (lbl, node) => { const l = el('label', lbl); l.append(node); return l; };
 
-    // Card 1: Company Profile & Commercial Offers
-    const compCard = el('div', undefined, 'card');
-    compCard.append(el('h3', '🏢 Our Company Identity & Commercial Offer'));
-    const cName = el('input'); cName.value = company.company_name || '';
-    const cBin = el('input'); cBin.value = company.bin || '';
-    const cCity = el('input'); cCity.value = company.city || '';
-    const cWeb = el('input'); cWeb.value = company.website || '';
-    const cMgr = el('input'); cMgr.value = company.manager_name || '';
-    const cPhone = el('input'); cPhone.value = company.manager_phone || '';
-    const cPdfKz = el('input'); cPdfKz.value = company.default_pdf_kz || '';
-    const cPdfRu = el('input'); cPdfRu.value = company.default_pdf_ru || '';
-
-    const cGrid = el('div', undefined, 'studio-form-grid');
-    add(cGrid,
-      wrap('Company Name (AI introduces itself from here)', cName),
-      wrap('Company BIN', cBin),
-      wrap('City', cCity),
-      wrap('Website', cWeb),
-      wrap('Manager Name (for Call Transfer)', cMgr),
-      wrap('Manager Phone', cPhone),
-      wrap('Default Commercial Offer PDF (KZ)', cPdfKz),
-      wrap('Default Commercial Offer PDF (RU)', cPdfRu)
-    );
-    compCard.append(cGrid);
-    const cActs = el('div', undefined, 'actions');
-    cActs.append(button('💾 Save Company Profile', async () => {
-      await api('/studio/settings/company', 'PUT', {
-        company_name: cName.value.trim(),
-        bin: cBin.value.trim(),
-        city: cCity.value.trim(),
-        website: cWeb.value.trim(),
-        manager_name: cMgr.value.trim(),
-        manager_phone: cPhone.value.trim(),
-        description: company.description || '',
-        default_pdf_kz: cPdfKz.value.trim(),
-        default_pdf_ru: cPdfRu.value.trim(),
-      });
-      notice('Company profile saved! AI will now introduce itself as ' + cName.value.trim());
-      if (onRefreshState) await onRefreshState(false);
-    }, 'primary-btn'));
-    compCard.append(cActs);
-    root.append(compCard);
-
-    // Card 2: Calling Engine & Voice Audio Preview
+    // Card 1: Calling Engine & Voice Audio Preview
     const telCard = el('div', undefined, 'card');
     telCard.append(el('h3', '📞 Calling Engine, Concurrency, Forwarding Queue & Voice Preview'));
     const tConc = el('input'); tConc.type = 'number'; tConc.min = 1; tConc.max = 20; tConc.value = tel.concurrent_calls || 1;
@@ -809,6 +826,7 @@ window.PlatformStudioUI = (() => {
     renderProductCatalog,
     renderAudienceAnalyzer,
     renderConnectors,
+    renderCompanyProfile,
     renderTelephonyAndScript,
   };
 })();
