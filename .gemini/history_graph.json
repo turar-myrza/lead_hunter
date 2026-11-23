@@ -68,5 +68,12 @@
     "result_summary": "1) Added SQLite persistence (am_campaign, am_audience, am_lead, am_dial_queue) in app/services/ads_store.py and rules/models in app/models/ads_manager.py enforcing B2C manual_import-only policy; 2) Built discovery adapters (UTF-8 CSV seeds, manual CSV import, graceful goszakup 302 login_required handling), Kazakhstan phone normalization/ranking, ICP scoring (0-100), read-only PBX whitelist cache (69 numbers), shared WhatsApp offer helper, and Asia/Almaty 09:00-19:00 Mon-Fri dialer worker in app/services/ads_manager.py and app/control_worker.py; 3) Exposed /platform/api/ads/* REST + CSV export routes in app/api/ads_manager.py; 4) Built Meta-Ads-Manager-style 3-tab table UI with cascade filters, toggles, queue controls, and slide-in Visual Filter Drawer in app/web/ads_manager.js and control.{html,css,js}; 5) Bumped VERSION to 1.7.0, passed all 15 pytest tests, deployed to whatflow, and verified live discovery (134 Almaty B2B leads), goszakup login_required reporting, and queued PBX call execution to +77056945245.",
     "parent": "node-1.6.0-rebuilt-leadhunter-cockpit-and-outreach-architecture",
     "timestamp": "2026-11-23T10:47:00+05:00"
+  },
+  {
+    "id": "node-2.2.0-step-1-declarative-frontend-rebuild",
+    "prompt_summary": "Step 1 of autonomous B2B sales pipeline plan: declarative frontend architecture rebuild (Tabler UI, zero-duplication list/grid views, XSS safe, 20/20 tests passing, deployed to whatflow)",
+    "result_summary": "1) Solved the List View / Grid View DOM element duplication bug by introducing isolated itemsContainer with replaceChildren() in app/web/studio.js; 2) Enforced clean root re-renders for all studio views and decoupled draft card containers; 3) Added unit and DOM regression tests in tests/test_platform_studio.py (test_control_html_includes_declarative_scripts_and_cache_busting, test_xss_escaping_in_script_preview); 4) Bumped VERSION to 2.2.0 across all 10 core modules and added ?v=2.2.0 cache-busting asset query parameters; 5) Deployed to production (whatflow 195.49.210.252) and verified all 20 tests passed.",
+    "parent": "node-1.7.0-ads-manager-interface",
+    "timestamp": "2026-11-23T12:45:00+05:00"
   }
 ]
