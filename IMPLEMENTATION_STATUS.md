@@ -304,3 +304,38 @@ clear this session; keep the control center at `/platform`.
 - Medical/health claims and URLs explicitly dated more than one year ago are
   excluded from current B2C market evidence rather than being reframed as buyer
   need or purchase intent.
+
+## Adaptive Intelligence Engine — v1.6.0 (implementation pending deployment, 25 November 2026)
+
+- The shared `LeadHunterApplication` now has an optional bounded adaptive mode.
+  It retains the existing eight workflow stages and existing source adapters, but
+  records a goal, provisional buyer hypothesis, source strategies, attempts,
+  failure classification, evidence evaluation, stop reason and provisional lesson
+  in the same SQLite database as the run.
+- The ledger is deliberately separate from `SalesStore.step`: an interrupted
+  universal run clears stage checkpoints before replay, whereas completed public
+  research attempts must remain visible and are re-used without silently
+  repeating the same completed source request.
+- The planner ranks only implemented adapters available to that run. It can use
+  a materially different compatible source after a failed or evidence-empty
+  attempt; it does not claim to search unavailable social networks, job boards,
+  private Telegram groups, registries or paid services. Known unavailable/access-
+  required capabilities are visible as blocked capability gaps with the precise
+  next implementation/access requirement.
+- The versioned commercial-rule file and aggregate observed outcome counts are
+  retrieved as reviewed, low-confidence experience. They can refine a hypothesis
+  and source ranking but cannot change score weights, permissions, CRM data or
+  external behavior automatically. No generated conclusion becomes a permanent
+  rule without a reviewed versioned update.
+- B2C remains source-level: public demand signals are not people, contacts or
+  cold-outreach permission. The B2C medical-claim guard now recognizes equivalent
+  English terms in addition to Russian terms.
+- API: `GET /api/v1/lead-hunter/runs/{id}/adaptive`; panel: the Discovery and
+  Analytics views display goals, hypotheses, sources attempted, failures,
+  experience, capability gaps, lessons and justified stopping conditions.
+  No send, call or CRM-write endpoint was added.
+- Local verification before deployment: `47 passed` in focused adaptive,
+  universal, control-center and legacy-national-discovery tests; full suite
+  `526 passed, 2 skipped`, with one known Starlette/httpx deprecation warning.
+  A live deployment/network run is still required before claiming deployed
+  behavior.

@@ -211,6 +211,16 @@ def test_api_and_cli_share_runs(service, monkeypatch, capsys):
             assert client.get(f'{prefix}/runs/{run_id}/result', headers=headers).json()['run_id'] == run_id
             assert client.get(f'{prefix}/runs/404/result', headers=headers).status_code == 404
 
+            adaptive_request = payload('cake_trays')
+            adaptive_request['adaptive'] = {'current_objective': 'Find a reviewable packaging opportunity.'}
+            adaptive_response = client.post(f'{prefix}/runs', json=adaptive_request, headers=headers)
+            assert adaptive_response.status_code == 202
+            adaptive_id = adaptive_response.json()['run_id']
+            adaptive_view = client.get(f'{prefix}/runs/{adaptive_id}/adaptive', headers=headers)
+            assert adaptive_view.status_code == 200
+            assert adaptive_view.json()['goal']['current_objective'] == 'Find a reviewable packaging opportunity.'
+            assert adaptive_view.json()['attempts'][0]['capability_id'] == 'evidence_intake'
+
             monkeypatch.setattr('sys.argv', ['lead_hunter', 'universal', '--db', str(service.store.path),
                 '--output-root', str(service.output_root), 'submit', str(FIXTURES / 'decompression_belt.json')])
             main()

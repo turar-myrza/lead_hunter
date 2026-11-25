@@ -22,7 +22,8 @@ from app.services.universal_sources import Discovery, Verification, VerifiedCand
 _MEDICAL_CLAIM = re.compile(
     r'лечени|профилактик|диагноз|остеохондроз|радикулит|ревматизм|неврит|люмбаго|'
     r'грыж|травм|операц|после родов|хроническ\S* бол|бол\S*|проблем\S* со спин|'
-    r'заболев|здоров|медицин|ортопед', re.IGNORECASE)
+    r'заболев|здоров|медицин|ортопед|treatment|diagnos|chronic\s+(?:back\s+)?pain|'
+    r'back\s+pain|medical|health\s+condition|injur(?:y|ies)|surgery', re.IGNORECASE)
 _URL_YEAR = re.compile(r'/(20\d{2})(?:/|$)')
 
 

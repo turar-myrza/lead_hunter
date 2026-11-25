@@ -10,6 +10,8 @@ from app.models.sales_team import Prospect
 from app.models.universal_lead_hunter import (
     ActionCapability, RunRequest, RunResult, RunStatus, SourcePlan, StageError, StageProgress,
 )
+from app.models.adaptive_intelligence import AdaptiveRunView
+from app.services.adaptive_intelligence import AdaptiveIntelligenceEngine
 from app.services.sales_store import SalesStore
 from app.services.universal_qualification import build_opportunity, qualify, understand
 from app.services.universal_sources import ADAPTERS, OTHER_SOURCES, SourceAdapter
@@ -83,6 +85,10 @@ class LeadHunterApplication:
         saved = self.store.step(run_id, 'finished', 'result')
         return RunResult.model_validate(saved) if saved else None
 
+    def adaptive_status(self, run_id: int) -> AdaptiveRunView | None:
+        """Return the reviewable adaptive journal for API, CLI and the panel."""
+        return AdaptiveIntelligenceEngine(self.store).view(run_id)
+
     def artifact(self, run_id: int, name: str) -> Path | None:
         result = self.result(run_id)
         if name not in ARTIFACTS or result is None or name not in result.artifacts:
@@ -94,7 +100,9 @@ class LeadHunterApplication:
         planned = []
         for capability in self.capabilities():
             for path in sorted(request.brief.buyer_paths.intersection(capability.paths)):
-                if request.source_ids and capability.id not in request.source_ids:
+                preferred = not request.source_ids or capability.id in request.source_ids
+                fallback = bool(request.adaptive and request.adaptive.enabled and request.adaptive.allow_alternative_sources)
+                if not preferred and not fallback:
                     enabled, reason = False, 'This run selected other sources.'
                 elif capability.status != 'implemented':
                     enabled, reason = False, capability.access
@@ -107,7 +115,8 @@ class LeadHunterApplication:
                 elif capability.id == 'evidence_intake' and not any(c.path == path for c in request.supplied_candidates):
                     enabled, reason = False, 'No evidence intake records supplied for this buyer path.'
                 else:
-                    enabled, reason = True, capability.access
+                    enabled = True
+                    reason = capability.access if preferred else 'Adaptive fallback: compatible implemented source available after a materially different attempt.'
                 objective = (f'Find a use case, owning department and supplier decision path for {request.brief.name}.'
                              if path == 'organization' else
                              f'Review inbound need, user, household decision and payment roles for {request.brief.name}.')
@@ -147,7 +156,8 @@ class LeadHunterApplication:
             progress('running')
             plan = self._plan(request)
             enabled_ids = dict.fromkeys(entry.capability.id for entry in plan if entry.enabled)
-            enabled = {key: self.adapters[key]() for key in enabled_ids}
+            enabled_factories = {key: self.adapters[key] for key in enabled_ids}
+            enabled = {key: factory() for key, factory in enabled_factories.items()}
             uncovered = request.brief.buyer_paths - {entry.path for entry in plan if entry.enabled}
             skipped = set(request.source_ids) - enabled.keys()
             plan_errors = [error('no_source_for_path', f'No enabled source for the {path} path.') for path in sorted(uncovered)]
@@ -156,38 +166,60 @@ class LeadHunterApplication:
 
             stage = 'discover'
             progress('running')
+            adaptive = bool(request.adaptive and request.adaptive.enabled)
+            adaptive_execution = None
             discoveries, failures = {}, []
-            for key, adapter in enabled.items():
-                try:
-                    discoveries[key] = await adapter.discover(request)
-                except Exception:
-                    failures.append(error('discovery_failed', 'Adapter discovery failed.', key))
-                    continue
-                if discoveries[key].incomplete:
-                    failures.append(error('discovery_incomplete', 'Some configured upstream sources did not complete.', key))
-            progress('partial' if failures else 'completed', f'{len(discoveries)} adapter response(s).', failures)
+            if adaptive:
+                adaptive_execution = await AdaptiveIntelligenceEngine(self.store).execute(run_id, request, plan, enabled_factories)
+                failures = [error(item.classification, item.summary, item.source_id) for item in adaptive_execution.failures]
+                progress('partial' if failures else 'completed',
+                         f'{len(adaptive_execution.records)} verified record(s) retained across adaptive source attempt(s).', failures)
+            else:
+                for key, adapter in enabled.items():
+                    try:
+                        discoveries[key] = await adapter.discover(request)
+                    except Exception:
+                        failures.append(error('discovery_failed', 'Adapter discovery failed.', key))
+                        continue
+                    if discoveries[key].incomplete:
+                        failures.append(error('discovery_incomplete', 'Some configured upstream sources did not complete.', key))
+                progress('partial' if failures else 'completed', f'{len(discoveries)} adapter response(s).', failures)
 
             stage = 'verify'
             progress('running')
             records, source_ids, failures = {}, {}, []
-            for key, discovered in discoveries.items():
-                try:
-                    verified = await enabled[key].verify(request, discovered)
-                except Exception:
-                    failures.append(error('verification_failed', 'Adapter evidence verification failed.', key))
-                    continue
-                if verified.incomplete:
-                    failures.append(error('verification_incomplete', 'Some upstream evidence could not be read.', key))
-                active_paths = {entry.path for entry in plan if entry.enabled and entry.capability.id == key}
-                for record in verified.records:
+            if adaptive_execution is not None:
+                for record in adaptive_execution.records.values():
                     candidate = record.candidate
+                    key = adaptive_execution.source_ids.get(self._adaptive_candidate_key(candidate), 'unknown')
+                    active_paths = {entry.path for entry in plan if entry.enabled and entry.capability.id == key}
                     if candidate.path not in active_paths or candidate.id in records:
                         failures.append(error('candidate_conflict', 'Candidate path or identity is inconsistent with its run.', key))
                         continue
                     if len(records) < request.limit:
                         records[candidate.id] = record
                         source_ids[candidate.id] = key
-            progress('partial' if failures else 'completed', f'{len(records)} candidate(s) retained with provenance.', failures)
+                progress('partial' if failures else 'completed',
+                         f'{len(records)} candidate(s) retained with provenance after adaptive verification.', failures)
+            else:
+                for key, discovered in discoveries.items():
+                    try:
+                        verified = await enabled[key].verify(request, discovered)
+                    except Exception:
+                        failures.append(error('verification_failed', 'Adapter evidence verification failed.', key))
+                        continue
+                    if verified.incomplete:
+                        failures.append(error('verification_incomplete', 'Some upstream evidence could not be read.', key))
+                    active_paths = {entry.path for entry in plan if entry.enabled and entry.capability.id == key}
+                    for record in verified.records:
+                        candidate = record.candidate
+                        if candidate.path not in active_paths or candidate.id in records:
+                            failures.append(error('candidate_conflict', 'Candidate path or identity is inconsistent with its run.', key))
+                            continue
+                        if len(records) < request.limit:
+                            records[candidate.id] = record
+                            source_ids[candidate.id] = key
+                progress('partial' if failures else 'completed', f'{len(records)} candidate(s) retained with provenance.', failures)
 
             stage = 'crm_review'
             progress('running')
@@ -243,6 +275,10 @@ class LeadHunterApplication:
         except Exception:
             progress('failed', 'The run could not complete.', [error('stage_failed', 'An unexpected stage error occurred.')])
             self.store.finish(run_id, 'failed')
+
+    @staticmethod
+    def _adaptive_candidate_key(candidate):
+        return f'{candidate.path}:{candidate.label.casefold().strip()}'
 
 
 def _legacy_decisions(crm, records):

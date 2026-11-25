@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.services.sales_store import SalesStore
 from app.services.control_store import ControlStore
 from app.services.control_center import ControlCenter
+from app.services.universal_lead_hunter import LeadHunterApplication
 from app.models.control_center import ProductProfile,QuickProductInput,CampaignInput,SegmentApproval,Review,OfferInput
 from app.services.lead_hunter_open_channels import client_from_settings,inventory
 from app.integrations.bitrix24_open_channels import OpenChannelsError
@@ -74,12 +75,22 @@ def logout(response:Response):
 @router.get('/api/state',dependencies=[Depends(auth)])
 def state(svc=Depends(service)):
     result=svc.snapshot()
+    web_research_ready=bool(svc.settings.control_ai_web_research_enabled and svc.settings.control_ai_enabled and svc.settings.control_gemini_key)
     result['capabilities']={'product_ai':bool(svc.settings.control_ai_enabled and svc.settings.control_gemini_key),
         'crm_configured':bool(svc.settings.bitrix24_webhook_url or svc.settings.bitrix24_open_channels_webhook_url),
         'crm_writes':False,'external_calls':False,'external_messages':False,'voice_quality':'not_approved',
-        'source_adapters':['product_public: GDELT + approved public URLs','grounded_public_web: cited public organization pages',
-                           'b2c_public_demand: cited public B2C demand signals','evidence_intake','shymkent_crm','kazakhstan_sales'],
-        'public_web_research_ready':bool(svc.settings.control_ai_web_research_enabled and svc.settings.control_ai_enabled and svc.settings.control_gemini_key),
+        'source_adapters':[
+            {'id':'product_public','status':'implemented','access':'GDELT plus independently verified public pages.'},
+            {'id':'grounded_public_web','status':'implemented' if web_research_ready else 'requires_access',
+             'access':'Configured Gemini public-web grounding and citation verification.'},
+            {'id':'b2c_public_demand','status':'implemented' if web_research_ready else 'requires_access',
+             'access':'Public aggregate demand signals only; no people or cold-contact data.'},
+            {'id':'evidence_intake','status':'implemented','access':'Structured operator-supplied evidence.'},
+            {'id':'shymkent_crm','status':'implemented','access':'Bounded public regional CRM signals.'},
+            {'id':'kazakhstan_sales','status':'implemented','access':'Bounded public national sales signals.'},
+            {'id':'configured_public_sites','status':'requires_access','access':'Legacy constrained RSS/index/employer sources need a reviewed registry adapter in the universal runtime.'},
+        ],
+        'public_web_research_ready':web_research_ready,
         'public_telegram_discovery':'available only through cited t.me/s/<public-channel> pages when public web research is enabled',
         'individual_discovery':'public demand-signal research only; personal contacts require inbound or opt-in evidence',
         'daily_ai_call_limit':svc.settings.control_ai_daily_calls}
@@ -132,6 +143,15 @@ def segment(ident:int,data:SegmentApproval,svc=Depends(service)):
 
 @router.post('/api/campaigns',dependencies=[Depends(auth)])
 def campaign(data:CampaignInput,svc=Depends(service)):return invoke(lambda:svc.campaign(data.segment_id,data.target))
+
+@router.get('/api/jobs/{job}/adaptive',dependencies=[Depends(auth)])
+def adaptive_campaign(job:int,svc=Depends(service)):
+    record=svc.store.job(job)
+    run_id=(record or {}).get('result',{}).get('run_id')
+    if not run_id:raise HTTPException(409,'Adaptive campaign is not available for this job.')
+    value=LeadHunterApplication(svc.store.base,svc.settings.lead_hunter_output).adaptive_status(run_id)
+    if not value:raise HTTPException(409,'Adaptive campaign state is not available for this job.')
+    return value
 
 @router.put('/api/jobs/{job}/prospects/{candidate}/review',dependencies=[Depends(auth)])
 def review(job:int,candidate:str,data:Review,svc=Depends(service)):

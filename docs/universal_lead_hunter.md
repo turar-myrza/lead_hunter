@@ -18,6 +18,41 @@ From the repository root with the dependencies in `requirements.txt` installed i
 
 `submit` prints a run ID before processing. Use `submit --queue-only REQUEST.json` followed by `process RUN_ID` to launch later. `process` on an interrupted queued/running run replays the read-only stages from the stored input, under a per-run lock. Completed and failed runs remain available for inspection. `partial` presents usable results and the affected stages. A failed run exposes the failing stage. The legacy LeadHunter `run`, `export`, and CRM commands, and the Sales Team `run`, `simulate`, and dashboard commands keep their existing arguments and behavior.
 
+### Adaptive campaign mode
+
+An optional `adaptive` object in `RunRequest` turns the same shared run into a
+bounded, review-only decision loop. It does not enable any new source or
+communication channel. It records a commercial goal, success criteria,
+resources, unknowns, public-research budget, authorization boundary and stop
+conditions. From this it creates provisional buyer hypotheses and ranks only
+the adapters actually registered for the run.
+
+When an adapter fails or returns no record meeting the evidence criteria, the
+application classifies the result, revises the hypothesis and tries a different
+compatible implemented adapter if its budget permits. It does not repeat the
+same failed attempt unchanged, invent a prospect, or claim access to a missing
+capability. If no feasible alternative exists, the result has a justified stop
+reason and a capability/access requirement for review.
+
+The adaptive ledger is stored alongside the shared run in SQLite, separate from
+stage checkpoints. Completed public evidence is restored after a worker restart
+without reissuing that completed request. It stores concise evidence links,
+strategy choice, expected vs actual result, failure/recovery, confidence change,
+provisional lesson and provenance-labelled experience—not chain-of-thought or
+private CRM history.
+
+Example request fragment:
+
+```json
+{
+  "adaptive": {
+    "current_objective": "Find evidence-backed organizations for manager review.",
+    "budget": {"max_attempts": 3, "max_public_requests": 100, "max_seconds": 180},
+    "authorization": {"public_research": true, "crm_read_only": true}
+  }
+}
+```
+
 For the internal API, configure `LEAD_HUNTER_API_TOKEN` in the environment with a private bearer token. Start `.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1`. `/docs` shows the LeadHunter operations. Pass `Authorization: Bearer <token>` on all LeadHunter requests. This stage assumes a single internal workspace. Configure `LEAD_HUNTER_DB` and `LEAD_HUNTER_OUTPUT` as a pair when using an alternate workspace. Both the CLI and API read these settings. For one-off CLI overrides use `universal --db PATH --output-root PATH ...`.
 
 | API route under `/api/v1/lead-hunter` | Behavior |
@@ -25,6 +60,7 @@ For the internal API, configure `LEAD_HUNTER_API_TOKEN` in the environment with 
 | `POST /runs` | Submit the same JSON as the CLI, return `202` and a queued run ID, then process it in the API background. |
 | `GET /runs/{id}` | Read run status, stage progress, and any structured errors. |
 | `GET /runs/{id}/result` | Retrieve completed or partial structured output. Returns `409` while unavailable. |
+| `GET /runs/{id}/adaptive` | Retrieve the goal, hypotheses, strategies, attempts, failures, experience and stop reason for an adaptive run. |
 | `GET /runs/{id}/artifacts/{name}` | Download a generated legacy-profile workbook. |
 | `GET /sources` | List source capabilities and access requirements. |
 

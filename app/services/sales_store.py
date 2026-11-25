@@ -23,6 +23,32 @@ CREATE TABLE IF NOT EXISTS event (
     external_id TEXT UNIQUE, variant TEXT, language TEXT, segment TEXT);
 CREATE TABLE IF NOT EXISTS identity (
     key TEXT PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), company TEXT NOT NULL);
+-- The adaptive ledger is intentionally separate from `step`: interrupted
+-- universal runs clear `step` values before a safe restart, while decisions
+-- and completed research attempts must remain auditable and resumable.
+CREATE TABLE IF NOT EXISTS adaptive_campaign (
+    run_id INTEGER PRIMARY KEY REFERENCES run(id), goal TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'planned', stop_reason TEXT,
+    created TEXT NOT NULL, updated TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS adaptive_hypothesis (
+    run_id INTEGER NOT NULL REFERENCES run(id), hypothesis_id TEXT NOT NULL,
+    revision INTEGER NOT NULL, payload TEXT NOT NULL, updated TEXT NOT NULL,
+    PRIMARY KEY(run_id,hypothesis_id));
+CREATE TABLE IF NOT EXISTS adaptive_strategy (
+    run_id INTEGER NOT NULL REFERENCES run(id), strategy_id TEXT NOT NULL,
+    payload TEXT NOT NULL, updated TEXT NOT NULL,
+    PRIMARY KEY(run_id,strategy_id));
+CREATE TABLE IF NOT EXISTS adaptive_attempt (
+    run_id INTEGER NOT NULL REFERENCES run(id), sequence INTEGER NOT NULL,
+    payload TEXT NOT NULL, updated TEXT NOT NULL,
+    PRIMARY KEY(run_id,sequence));
+CREATE TABLE IF NOT EXISTS adaptive_experience (
+    run_id INTEGER NOT NULL REFERENCES run(id), experience_id TEXT NOT NULL,
+    payload TEXT NOT NULL, PRIMARY KEY(run_id,experience_id));
+CREATE TABLE IF NOT EXISTS adaptive_journal (
+    id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id),
+    sequence INTEGER NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
+    created TEXT NOT NULL, UNIQUE(run_id,sequence));
 """
 OBSERVED_EVENTS = frozenset({
     'email_sent', 'email_delivered', 'call_connected', 'interested_reply',
@@ -149,6 +175,81 @@ class SalesStore:
             if error:
                 db.execute('INSERT INTO event(run_id,kind,subject,at) VALUES(?,?,?,?)',
                            (run_id, error, '', now().isoformat()))
+
+    # ---- Adaptive LeadHunter ledger -------------------------------------
+    # These methods intentionally use concise structured payloads. They are
+    # append-only where a historical explanation matters and avoid storing
+    # unstructured model traces or private CRM data.
+    def adaptive_start(self, run_id, goal, experience=()):
+        stamp = now().isoformat()
+        with self.connect() as db:
+            db.execute('INSERT OR IGNORE INTO adaptive_campaign(run_id,goal,status,created,updated) VALUES(?,?,?,?,?)',
+                       (run_id, json.dumps(goal, ensure_ascii=False), 'planned', stamp, stamp))
+            db.executemany('INSERT OR IGNORE INTO adaptive_experience(run_id,experience_id,payload) VALUES(?,?,?)',
+                           [(run_id, item['id'], json.dumps(item, ensure_ascii=False)) for item in experience])
+
+    def adaptive_set_campaign(self, run_id, *, status=None, stop_reason=None):
+        with self.connect() as db:
+            row = db.execute('SELECT status,stop_reason FROM adaptive_campaign WHERE run_id=?', (run_id,)).fetchone()
+            if not row:
+                return False
+            db.execute('UPDATE adaptive_campaign SET status=?,stop_reason=?,updated=? WHERE run_id=?',
+                       (status if status is not None else row['status'],
+                        stop_reason if stop_reason is not None else row['stop_reason'], now().isoformat(), run_id))
+        return True
+
+    def adaptive_save_hypothesis(self, run_id, payload):
+        with self.connect() as db:
+            db.execute('INSERT INTO adaptive_hypothesis VALUES(?,?,?,?,?) '
+                       'ON CONFLICT(run_id,hypothesis_id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload,updated=excluded.updated',
+                       (run_id, payload['id'], payload['revision'], json.dumps(payload, ensure_ascii=False), now().isoformat()))
+
+    def adaptive_save_strategy(self, run_id, payload):
+        with self.connect() as db:
+            db.execute('INSERT INTO adaptive_strategy VALUES(?,?,?,?) '
+                       'ON CONFLICT(run_id,strategy_id) DO UPDATE SET payload=excluded.payload,updated=excluded.updated',
+                       (run_id, payload['id'], json.dumps(payload, ensure_ascii=False), now().isoformat()))
+
+    def adaptive_save_attempt(self, run_id, payload):
+        with self.connect() as db:
+            db.execute('INSERT INTO adaptive_attempt VALUES(?,?,?,?) '
+                       'ON CONFLICT(run_id,sequence) DO UPDATE SET payload=excluded.payload,updated=excluded.updated',
+                       (run_id, payload['sequence'], json.dumps(payload, ensure_ascii=False), now().isoformat()))
+
+    def adaptive_journal(self, run_id, kind, payload):
+        stamp = now().isoformat()
+        with self.connect() as db:
+            sequence = db.execute('SELECT COALESCE(MAX(sequence),0)+1 FROM adaptive_journal WHERE run_id=?',
+                                  (run_id,)).fetchone()[0]
+            db.execute('INSERT INTO adaptive_journal(run_id,sequence,kind,payload,created) VALUES(?,?,?,?,?)',
+                       (run_id, sequence, kind, json.dumps(payload, ensure_ascii=False), stamp))
+        return sequence
+
+    def adaptive_snapshot(self, run_id):
+        with self.connect() as db:
+            campaign = db.execute('SELECT * FROM adaptive_campaign WHERE run_id=?', (run_id,)).fetchone()
+            if not campaign:
+                return None
+            hypotheses = [json.loads(row['payload']) for row in db.execute(
+                'SELECT payload FROM adaptive_hypothesis WHERE run_id=? ORDER BY hypothesis_id', (run_id,))]
+            strategies = [json.loads(row['payload']) for row in db.execute(
+                'SELECT payload FROM adaptive_strategy WHERE run_id=? ORDER BY strategy_id', (run_id,))]
+            attempts = [json.loads(row['payload']) for row in db.execute(
+                'SELECT payload FROM adaptive_attempt WHERE run_id=? ORDER BY sequence', (run_id,))]
+            experience = [json.loads(row['payload']) for row in db.execute(
+                'SELECT payload FROM adaptive_experience WHERE run_id=? ORDER BY experience_id', (run_id,))]
+            journal = [{'sequence': row['sequence'], 'kind': row['kind'], 'payload': json.loads(row['payload']), 'created': row['created']}
+                       for row in db.execute('SELECT sequence,kind,payload,created FROM adaptive_journal WHERE run_id=? ORDER BY sequence',
+                                             (run_id,))]
+        return {'run_id': run_id, 'status': campaign['status'], 'goal': json.loads(campaign['goal']),
+                'stop_reason': campaign['stop_reason'], 'hypotheses': hypotheses, 'strategies': strategies,
+                'attempts': attempts, 'experience': experience, 'journal': journal}
+
+    def outcome_experience_summary(self):
+        """Return only aggregate observed outcome counts for planning context."""
+        with self.connect() as db:
+            counts = dict(db.execute("SELECT kind,count(*) FROM event WHERE kind IN ('sale','meeting_booked','interested_reply','declined','opt_out') GROUP BY kind"))
+        return counts
 
     def prior(self, run_id, keys):
         with self.connect() as db:

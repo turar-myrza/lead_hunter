@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings, get_settings
 from app.models.universal_lead_hunter import RunRequest, RunResult, RunStatus, SourceCapability
+from app.models.adaptive_intelligence import AdaptiveRunView
 from app.services.sales_store import SalesStore
 from app.services.universal_lead_hunter import LeadHunterApplication
 
@@ -62,6 +63,16 @@ def result(run_id: int, service: Application, response: Response):
     value = service.result(run_id)
     if value is None:
         raise HTTPException(409, 'Run result is unavailable. Check run status.')
+    response.headers['Cache-Control'] = 'no-store'
+    return value
+
+
+@router.get('/runs/{run_id}/adaptive', response_model=AdaptiveRunView)
+def adaptive(run_id: int, service: Application, response: Response):
+    status(run_id, service)
+    value = service.adaptive_status(run_id)
+    if value is None:
+        raise HTTPException(409, 'Adaptive campaign state is unavailable for this run.')
     response.headers['Cache-Control'] = 'no-store'
     return value
 

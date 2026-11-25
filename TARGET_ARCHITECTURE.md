@@ -47,6 +47,31 @@ records; they do not silently initiate downstream actions. Preserve existing
 ProductBrief, BuyerPath, Evidence, Candidate, Qualification, Opportunity and
 InteractionEvent contracts, extending them with compatible migrations.
 
+### Adaptive intelligence policy
+
+The orchestrator must use a persistent, evidence-led decision loop rather than
+treating a completed source query as commercial success:
+
+1. state an ultimate and current objective, measurable success criteria,
+   resources, unknowns, budget, authorization boundary and stop conditions;
+2. retrieve only provenance-labelled, reviewed experience that is applicable to
+   the product and buyer path;
+3. create provisional buyer hypotheses with supporting and contradictory
+   evidence requirements and alternative verification paths;
+4. select the best feasible implemented strategy, execute it within the budget,
+   evaluate its evidence and classify any failure;
+5. update confidence, choose a materially different feasible strategy or stop
+   responsibly; persist concise decision records, not hidden reasoning;
+6. retain a provisional lesson with outcome/provenance. A lesson may influence
+   later planning only within its stated confidence and applicability. It cannot
+   rewrite score weights, authorization policy or production code automatically.
+
+The capability registry must distinguish implemented, access-required and
+unavailable sources. A capability gap may be displayed with a proposed access or
+adapter task, but it is not an executed search. Public research may be
+autonomous within the run budget; communication, CRM writes, spending,
+private-data processing and restricted-access systems remain separately gated.
+
 Persist separate product/run/opportunity identities and link evidence, contact
 history, responsible owner, next action, approvals and outcomes. An agent result
 or a generated proposal is not an executed action or observed business outcome.

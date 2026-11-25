@@ -111,8 +111,8 @@ class KazakhstanSalesDiscovery:
 # Factories create run-scoped adapters. For example, the public fetch cache is never shared across runs.
 ADAPTERS = (EvidenceIntake, ShymkentCRMDiscovery, KazakhstanSalesDiscovery)
 OTHER_SOURCES = (
-    SourceCapability(id='configured_public_sites', status='unavailable',
-        access='Legacy commands support operator-configured RSS, narrow indexes and official employer pages. No universal registry file input.', paths=['organization']),
+    SourceCapability(id='configured_public_sites', status='requires_access',
+        access='Legacy commands support constrained operator-configured RSS, narrow indexes and official employer pages. The universal runtime still needs a reviewed registry adapter/input.', paths=['organization']),
     SourceCapability(id='approved_inbound_provider', status='requires_access',
         access='Needs an authorized first-party form or provider and a permission-event connector. Manual intake is available.', paths=['individual', 'organization']),
     SourceCapability(id='web_search', status='unavailable', access='No general web-search adapter.', paths=['organization']),

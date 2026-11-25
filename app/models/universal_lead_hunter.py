@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, model_validator
 
+from app.models.adaptive_intelligence import AdaptiveCampaignRequest
+
 PathKind = Literal['organization', 'individual']
 Channel = Literal['email', 'sms', 'sip', 'inbound_reply', 'manager_review']
 Role = Literal['user', 'decision_maker', 'payer', 'influencer', 'procurement', 'technical_specialist', 'department_head', 'owner', 'caregiver']
@@ -90,6 +92,9 @@ class RunRequest(Record):
     discovery_queries: list[Annotated[str, StringConstraints(min_length=3, max_length=200)]] = Field(default_factory=list, max_length=4)
     discovery_urls: list[str] = Field(default_factory=list, max_length=20)
     supplied_candidates: list[Candidate] = Field(default_factory=list, max_length=15)
+    # A missing value deliberately retains the backwards-compatible one-pass
+    # workflow. The control centre opts into the bounded adaptive loop.
+    adaptive: AdaptiveCampaignRequest | None = None
 
     @model_validator(mode='after')
     def validate_input(self):

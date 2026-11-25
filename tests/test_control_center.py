@@ -239,6 +239,19 @@ def test_individual_strategy_uses_public_demand_research_without_crm(svc):
     strategy=svc._discovery_strategy(product,segment)
     assert strategy['source_ids']==['b2c_public_demand'] and strategy['crm_read_only'] is False
 
+
+def test_worker_recovery_requeues_only_adaptive_discovery(svc):
+    from app.control_worker import recover_interrupted_jobs
+    product=svc.store.save_product(profile().model_dump(mode='json'))
+    discovery=svc.store.enqueue('discovery',product,{'product':product['payload'],'segment_id':1,'segment':segment().model_dump(mode='json'),'target':1})
+    second=svc.store.save_product(profile().model_dump(mode='json'))
+    analysis=svc.store.enqueue('analysis',second,second['payload'])
+    with svc.store.base.connect() as db:
+        db.execute("UPDATE cc_job SET status='running' WHERE id IN (?,?)",(discovery['id'],analysis['id']))
+    assert recover_interrupted_jobs(svc.store.base)=={'resumed_discovery':1,'review_required':1}
+    assert svc.store.job(discovery['id'])['status']=='queued'
+    assert svc.store.job(analysis['id'])['status']=='failed'
+
 async def test_product_source_requires_exact_quotes_and_location(svc):
     from app.models.control_center import Extraction
     text='<h1>Example Bakery</h1><p>Example Bakery in Warsaw makes custom cakes.</p><p>Procurement lead Anna chooses packaging.</p>'+'<p>We prepare celebration cakes for transport and delivery.</p>'
@@ -283,6 +296,9 @@ async def test_campaign_same_orchestrator_and_no_outreach(svc,monkeypatch):
     assert j['status']=='partial' and j['result']['found']==1 and j['result']['shortfall']==19
     snapshot=svc.snapshot();job=next(x for x in snapshot['jobs'] if x['id']==j['id'])
     assert len(job['workflow']['stages'])==8
+    assert job['adaptive']['goal']['current_objective'].startswith('Find named organizations')
+    assert job['adaptive']['attempts'][0]['capability_id']=='product_public'
+    assert job['adaptive']['attempts'][0]['evaluation']['evidence_quality']=='verifiable'
     assert job['opportunities'][0]['engagement']['permission']=='review_only'
     with pytest.raises(ValueError,match='qualified'):svc.handoff(j['id'],'sample')
     svc.review(j['id'],'sample',Review(state='qualified',ethics_passed=True,rationale='Reviewed published packaging requirement',evidence_ids=['need'],next_action='Confirm specification internally'))

@@ -3,6 +3,7 @@ import asyncio,json
 from types import SimpleNamespace
 from app.models.control_center import ProductProfile,ProductIntelligence,QuickProductInput,Segment,Review
 from app.models.universal_lead_hunter import ProductBrief,RunRequest
+from app.models.adaptive_intelligence import AdaptiveCampaignRequest, CampaignAuthorization
 from app.services.control_store import ControlStore,unpack
 from app.services.sales_store import now
 from app.services.universal_lead_hunter import LeadHunterApplication
@@ -79,7 +80,7 @@ class ControlCenter:
         })
 
     def _discovery_strategy(self, profile, segment):
-        """Choose sources inside the application; operators approve an audience, not adapters."""
+        """Choose the initial strategy; the shared engine owns bounded fallbacks."""
         material = ' '.join((profile.brief.name, profile.brief.description, profile.brief.category)).casefold()
         market = profile.brief.market.casefold()
         crm_product = any(word in material for word in ('crm', 'битрикс', 'автоматизац', 'мойсклад'))
@@ -93,7 +94,7 @@ class ControlCenter:
                 'source_ids': ['b2c_public_demand'],
                 'research_context': 'general',
                 'crm_read_only': False,
-                'reason': ('Публичные страницы и Telegram-каналы исследуются только как агрегированные сигналы спроса. '
+                'reason': ('Первая стратегия: публичные страницы и Telegram-каналы исследуются только как агрегированные сигналы спроса. '
                            'Личные профили, контакты и прямое обращение к людям не используются.'
                            + (' Поиск включён.' if web_research_ready else ' Поиск требует включённого публичного веб-исследования.')),
             }
@@ -103,7 +104,7 @@ class ControlCenter:
                 'source_ids': ['shymkent_crm', *public_web],
                 'research_context': 'crm_sales_operations',
                 'crm_read_only': True,
-                'reason': 'Региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24.'+web_note,
+                'reason': 'Первая стратегия: региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24. Адаптивный движок проверит совместимые альтернативы только после фактического результата.'+web_note,
             }
         if segment.path == 'organization' and crm_product and market in {'казахстан', 'kazakhstan'}:
             return {
@@ -111,14 +112,14 @@ class ControlCenter:
                 'source_ids': ['kazakhstan_sales', *public_web],
                 'research_context': 'crm_sales_operations',
                 'crm_read_only': True,
-                'reason': 'Региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24.'+web_note,
+                'reason': 'Первая стратегия: региональные сигналы роста, вакансий, автоматизации и подтверждённого Битрикс24. Адаптивный движок проверит совместимые альтернативы только после фактического результата.'+web_note,
             }
         return {
             'label': 'Публичные источники по одобренной аудитории',
             'source_ids': ['product_public', *public_web],
             'research_context': 'general',
             'crm_read_only': True,
-            'reason': 'Публичные страницы и публикации с проверяемыми цитатами.'+web_note,
+            'reason': 'Первая стратегия: публичные страницы и публикации с проверяемыми цитатами. Совместимые альтернативы выбираются только при недостаточном результате.'+web_note,
         }
 
     def review(self, job_id, candidate_id, review):
@@ -163,6 +164,8 @@ class ControlCenter:
                 status=app.status(rid);result=app.result(rid)
                 job['workflow']=status.model_dump(mode='json') if status else None
                 job['opportunities']=result.model_dump(mode='json')['opportunities'] if result else []
+                adaptive=app.adaptive_status(rid)
+                job['adaptive']=adaptive.model_dump(mode='json') if adaptive else None
         return data
 
     async def process(self, job):
@@ -211,12 +214,35 @@ class ControlCenter:
                     research_context=strategy['research_context'], crm_read_only=strategy['crm_read_only'],
                     limit=job['payload']['target'],
                     # Seller references describe our product. They are never treated as buyer sources.
-                    discovery_queries=seg.queries if 'product_public' in strategy['source_ids'] else [],
-                    discovery_urls=seg.source_urls if 'product_public' in strategy['source_ids'] else [],
-                    owner='CEO review queue')
-                run_id=app.submit(request)
-                with self.store.base.connect() as db:db.execute('UPDATE cc_job SET result=? WHERE id=?',(json.dumps({'run_id':run_id}),job['id']))
-                await app.process(run_id)
+                    # They are available to a later compatible fallback too.
+                    discovery_queries=seg.queries,
+                    discovery_urls=seg.source_urls,
+                    owner='CEO review queue',
+                    adaptive=AdaptiveCampaignRequest(
+                        ultimate_objective=('Prepare consent-based market-entry evidence.' if seg.path=='individual'
+                                            else 'Progress evidence-backed commercial opportunities to manager review.'),
+                        current_objective=('Research public source-level B2C demand without collecting people.' if seg.path=='individual'
+                                           else 'Find named organizations with current, verifiable commercial signals.'),
+                        known_information=[f'Approved audience: {seg.name}', f'Initial strategy: {strategy["label"]}'],
+                        unknowns=['Whether a current public source supports the product-fit hypothesis.',
+                                  'Whether a listed business is already known to CRM Consulting.' if strategy['crm_read_only'] else 'Whether a consent-based inbound route is available.'],
+                        authorization=CampaignAuthorization(public_research=True, crm_read_only=strategy['crm_read_only']),
+                    ))
+                # A research job may be safely resumed after a worker restart.
+                # Its universal run persists an adaptive append-only journal;
+                # creating a second run would repeat public research and lose
+                # the recovery context. Other job kinds retain their stricter
+                # no-replay policy in control_worker.py.
+                run_id=(job.get('result') or {}).get('run_id')
+                if run_id:
+                    if app.status(run_id) is None:
+                        raise ValueError('stored_universal_run_unavailable_review_required')
+                else:
+                    run_id=app.submit(request)
+                    with self.store.base.connect() as db:
+                        db.execute('UPDATE cc_job SET result=? WHERE id=?',(json.dumps({'run_id':run_id}),job['id']))
+                if app.status(run_id).status in {'queued','running'}:
+                    await app.process(run_id)
                 result=app.result(run_id);crm={}
                 if result and result.opportunities and strategy['crm_read_only']:
                     # Reuse conservative read-only name matching; never treat name-only match as confirmed.
@@ -226,11 +252,15 @@ class ControlCenter:
                     crm={p.candidate.id:checks.get(p.candidate.label,{'state':'unavailable'}) for p in result.opportunities}
                 count=len(result.opportunities) if result else 0
                 workflow=app.status(run_id)
+                adaptive=app.adaptive_status(run_id)
                 source_errors=[error.model_dump(mode='json') for stage in (workflow.stages if workflow else []) for error in stage.errors]
                 status='completed' if result and workflow and workflow.status=='completed' and count>=request.limit else 'partial'
                 self.store.finish(job['id'],status,{'run_id':run_id,'target':request.limit,'found':count,'crm':crm,
                     'shortfall':max(0,request.limit-count),'contacts_verified':0,'strategy':strategy,
                     'source_errors':source_errors,
+                    'adaptive_status':adaptive.status if adaptive else None,
+                    'adaptive_stop_reason':adaptive.stop_reason if adaptive else None,
+                    'adaptive_attempts':len(adaptive.attempts) if adaptive else 0,
                     'note':'Evidence-backed candidates require manager qualification; no messages or CRM writes.'})
         except Exception as exc:
             code=str(exc) if isinstance(exc,IntelligenceError) else 'job_failed_check_dependencies'
